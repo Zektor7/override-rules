@@ -14,6 +14,8 @@ https://github.com/powerfullz/override-rules
 - quic: 允许 QUIC 流量（UDP 443，默认 false）
 - threshold: 地区节点数量小于该值时不显示分组 (默认 0)
 - regex: 使用正则过滤模式（include-all + filter）写入各地区代理组，而非直接枚举节点名称（默认 false）
+- include: 只使用指定的规则，多个用逗号分隔。示例：#include=ADBlock,Netflix,YouTube（与 exclude 冲突时优先）
+- exclude: 排除指定的规则，多个用逗号分隔。示例：#exclude=EHentai,Weibo
 
 源码已迁移至 `src/*.ts`。
 */
@@ -65,6 +67,8 @@ const {
     regexFilter,
     tunEnabled,
     countryThreshold,
+    includedRules,
+    excludedRules,
 } = buildFeatureFlags(rawArgs);
 
 function main(config: ClashConfig): ClashConfig {
@@ -123,7 +127,7 @@ function main(config: ClashConfig): ClashConfig {
         proxies: globalProxies,
     });
 
-    const finalRules = buildRules({ quicEnabled });
+    const finalRules = buildRules({ quicEnabled, includedRules, excludedRules });
 
     return {
         proxies: config.proxies,

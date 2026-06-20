@@ -64,6 +64,8 @@
 *   `regex`：各国家/地区代理组改用 `include-all` + 正则过滤模式，由 Mihomo 内核在运行时按正则动态筛选节点，而非在脚本执行时枚举节点名称（默认 false）[^regex]
 *   `tun`：启用 TUN 模式（gvisor 栈，自动配置路由排除地址与 DNS 劫持，默认 false）
 *   `threshold`：国家/地区节点数量小于该值时不显示分组（默认 0）
+*   `include`：只使用指定的规则，多个用逗号分隔。例如 `#include=ADBlock,Netflix,YouTube` 只使用广告、Netflix 和 YouTube 规则
+*   `exclude`：排除指定的规则，多个用逗号分隔。例如 `#exclude=EHentai,Weibo` 排除E-Hentai和微博规则。与 `include` 冲突时 `include` 优先
 
 > **向后兼容**：旧的 `loadbalance` 参数仍然可用。当 `grouptype` 未指定时，`loadbalance=true` 等价于 `grouptype=2`，`loadbalance=false` 等价于 `grouptype=1`。
 
@@ -87,6 +89,24 @@ https://cdn.jsdelivr.net/gh/powerfullz/override-rules/convert.min.js#grouptype=1
 
 ```
 https://cdn.jsdelivr.net/gh/powerfullz/override-rules/convert.min.js#landing=true&grouptype=2
+```
+
+只想使用广告、Netflix 和 YouTube 规则，减少规则集数量，使用`include=ADBlock,Netflix,YouTube`参数：
+
+```
+https://cdn.jsdelivr.net/gh/powerfullz/override-rules/convert.min.js#include=ADBlock,Netflix,YouTube
+```
+
+不想要 E-Hentai 和微博规则，使用`exclude=EHentai,Weibo`参数：
+
+```
+https://cdn.jsdelivr.net/gh/powerfullz/override-rules/convert.min.js#exclude=EHentai,Weibo
+```
+
+组合多个参数，例如启用自动测速并排除某些规则：
+
+```
+https://cdn.jsdelivr.net/gh/powerfullz/override-rules/convert.min.js#grouptype=1&exclude=EHentai,TikTok
 ```
 
 如果想第一时间体验最新加入的 ~~Bug~~ 功能，可以使用 preview 分支的 Github Raw 链接：

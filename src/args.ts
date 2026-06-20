@@ -28,11 +28,54 @@ function parseGroupType(args: ScriptArgs): GroupType {
 }
 
 /**
+ * 解析规则过滤参数。
+ * - `include` 参数：指定只使用哪些规则（逗号分隔）
+ * - `exclude` 参数：指定要排除哪些规则（逗号分隔）
+ * - 如果同时指定两者，优先使用 include
+ * @param args - 从外部脚本环境传入的原始参数对象
+ * @returns 包含 includedRules 和 excludedRules 的对象
+ * @example
+ * ```ts
+ * parseRuleFilters({ include: "ADBlock,Netflix,YouTube" });
+ * // => { includedRules: Set(['adblock', 'netflix', 'youtube']), excludedRules: Set([]) }
+ *
+ * parseRuleFilters({ exclude: "EHentai,Weibo" });
+ * // => { includedRules: null, excludedRules: Set(['ehentai', 'weibo']) }
+ * ```
+ */
+function parseRuleFilters(args: ScriptArgs): {
+    includedRules: Set<string> | null;
+    excludedRules: Set<string>;
+} {
+    // 如果指定了 include，优先使用
+    if (args.include) {
+        const included = new Set(
+            args.include
+                .split(",")
+                .map((r) => r.trim().toLowerCase())
+                .filter(Boolean)
+        );
+        return { includedRules: included, excludedRules: new Set() };
+    }
+
+    // 否则使用 exclude
+    const excluded = new Set(
+        (args.exclude || "")
+            .split(",")
+            .map((r) => r.trim().toLowerCase())
+            .filter(Boolean)
+    );
+    return { includedRules: null, excludedRules: excluded };
+}
+
+/**
  * 解析传入的脚本参数，并将其转换为内部使用的功能开关（feature flags）。
  * @param args - 从外部脚本环境（如 Substore）传入的原始参数对象
  * @returns 经过解析和类型转换后的功能开关集合 `FeatureFlags`
  */
 export function buildFeatureFlags(args: ScriptArgs): FeatureFlags {
+    const { includedRules, excludedRules } = parseRuleFilters(args);
+
     return {
         groupType: parseGroupType(args),
         landing: parseBool(args.landing),
@@ -44,5 +87,7 @@ export function buildFeatureFlags(args: ScriptArgs): FeatureFlags {
         regexFilter: parseBool(args.regex),
         tunEnabled: parseBool(args.tun),
         countryThreshold: parseNumber(args.threshold, 0),
+        includedRules,
+        excludedRules,
     };
 }

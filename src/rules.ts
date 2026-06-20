@@ -41,14 +41,88 @@ const baseRules = [
 ];
 
 /**
+ * 提取规则名称标识符（用于过滤）
+ * 从规则字符串中提取可用于 include/exclude 的标识
+ */
+function extractRuleIdentifiers(rule: string): string[] {
+    const identifiers: string[] = [];
+
+    // 从 RULE-SET 提取规则集名称
+    const ruleSetMatch = rule.match(/RULE-SET,(\w+)/);
+    if (ruleSetMatch) {
+        identifiers.push(ruleSetMatch[1]);
+    }
+
+    // 从 GEOSITE 提取地区标识
+    const geositeMatch = rule.match(/GEOSITE,([\w\-@!]+)/);
+    if (geositeMatch) {
+        identifiers.push(geositeMatch[1]);
+    }
+
+    // 从 GEOIP 提取 IP 标识
+    const geoipMatch = rule.match(/GEOIP,(\w+)/);
+    if (geoipMatch) {
+        identifiers.push(geoipMatch[1]);
+    }
+
+    // 从 DOMAIN-SUFFIX 提取域名
+    const domainMatch = rule.match(/DOMAIN-SUFFIX,([\w.]+)/);
+    if (domainMatch) {
+        identifiers.push(domainMatch[1]);
+    }
+
+    return identifiers;
+}
+
+/**
+ * 检查规则是否应被保留
+ */
+function shouldKeepRule(
+    rule: string,
+    includedRules: Set<string> | null,
+    excludedRules: Set<string>
+): boolean {
+    // 始终保留基础规则
+    if (
+        rule.includes("DST-PORT,22") ||
+        rule.includes("GEOIP,private") ||
+        rule.includes("GEOIP,cn") ||
+        rule.includes("MATCH")
+    ) {
+        return true;
+    }
+
+    const identifiers = extractRuleIdentifiers(rule);
+
+    // 如果指定了包含列表，只保留在列表中的规则
+    if (includedRules !== null) {
+        return identifiers.some((id) => includedRules.has(id.toLowerCase()));
+    }
+
+    // 否则排除指定的规则
+    return !identifiers.some((id) => excludedRules.has(id.toLowerCase()));
+}
+
+/**
  * 构建最终的规则列表。
  *
  * @param {Object} params - 构建参数
  * @param {boolean} params.quicEnabled - 是否启用 QUIC（如未启用会插入 UDP:443 拦截规则）
+ * @param {Set<string> | null} params.includedRules - 包含的规则集合（null 表示不使用包含列表）
+ * @param {Set<string>} params.excludedRules - 排除的规则集合
  * @returns {string[]} 规则字符串数组
  */
-export function buildRules({ quicEnabled }: { quicEnabled: boolean }): string[] {
-    const ruleList = [...baseRules];
+export function buildRules({
+    quicEnabled,
+    includedRules,
+    excludedRules,
+}: {
+    quicEnabled: boolean;
+    includedRules: Set<string> | null;
+    excludedRules: Set<string>;
+}): string[] {
+    const ruleList = baseRules.filter((rule) => shouldKeepRule(rule, includedRules, excludedRules));
+
     if (!quicEnabled) {
         ruleList.unshift("AND,((DST-PORT,443),(NETWORK,UDP)),REJECT");
     }
