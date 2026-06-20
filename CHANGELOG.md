@@ -1,5 +1,16 @@
 # Changelog
 
+## [2.5.0](https://github.com/powerfullz/override-rules/compare/src-v2.4.4...src-v2.5.0) (2026-06-20)
+
+
+### Bug Fixes
+
+- Resolve include/exclude parameter filtering logic for proxy-groups and rule-providers ([4e79e48](https://github.com/powerfullz/override-rules/commit/4e79e480c602d3b37ff76fcb06c40510e4ab9f53))
+
+
+### Documentation
+
+- Add comprehensive rule values reference for include/exclude parameters ([68c80a8](https://github.com/powerfullz/override-rules/commit/68c80a8672fe16a65e5945ad08260d202c96511d))
 ## [2.4.4](https://github.com/powerfullz/override-rules/compare/...src-v2.4.4) (2026-06-20)
 
 
