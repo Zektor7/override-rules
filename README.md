@@ -67,6 +67,24 @@
 *   `include`：只使用指定的规则，多个用逗号分隔。例如 `#include=ADBlock,Netflix,YouTube` 只使用广告、Netflix 和 YouTube 规则
 *   `exclude`：排除指定的规则，多个用逗号分隔。例如 `#exclude=EHentai,Weibo` 排除E-Hentai和微博规则。与 `include` 冲突时 `include` 优先
 
+##### 可用的规则值参考
+
+以下是 `include`/`exclude` 参数支持的所有规则值（共 37 个，大小写不敏感）：
+
+**广告过滤：** `ADBlock`、`AdditionalFilter`、`SogouInput`
+
+**CDN/静态资源：** `StaticResources`、`CDNResources`、`AdditionalCDNResources`
+
+**流媒体：** `youtube`、`netflix`、`spotify`、`bilibili`、`twitch`、`bahamut`、`pikpak`
+
+**社交媒体：** `telegram`、`twitter`、`Weibo`、`truthsocial.com`
+
+**通用服务：** `google`、`microsoft`、`apple`、`github`、`xbox`、`category-ai-!cn`、`google-play@cn`、`microsoft@cn`
+
+**其他：** `Crypto`、`EHentai`、`TikTok`、`SteamFix`、`GoogleFCM`、`GFWList`
+
+**说明：** 基础规则（SSH、私有IP、CN直连、MATCH）始终保留，无需指定。建议使用 `include` 时配合你的实际需求，避免加载过多不需要的规则。
+
 > **向后兼容**：旧的 `loadbalance` 参数仍然可用。当 `grouptype` 未指定时，`loadbalance=true` 等价于 `grouptype=2`，`loadbalance=false` 等价于 `grouptype=1`。
 
 [^landing]: 注意在默认的枚举模式下，如果没有符合条件的落地节点（e.g 名称中带有「家宽」、「商宽」、「落地」等关键词的节点），内核会无法启动。
