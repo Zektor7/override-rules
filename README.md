@@ -66,6 +66,7 @@
 *   `threshold`：国家/地区节点数量小于该值时不显示分组（默认 0）
 *   `include`：只使用指定的规则，多个用逗号分隔。例如 `#include=ADBlock,Netflix,YouTube` 只使用广告、Netflix 和 YouTube 规则
 *   `exclude`：排除指定的规则，多个用逗号分隔。例如 `#exclude=EHentai,Weibo` 排除E-Hentai和微博规则。与 `include` 冲突时 `include` 优先
+*   `prefer`：优先选择指定节点（匹配的是具体节点名称而非策略组），多个用逗号分隔，支持正则。匹配到的节点将组成 `fallback` 优先选路组并置于代理组首位，指定节点不可用时自动回退到「自动选择」组，节点恢复后自动切回。未指定或无匹配节点时不创建该组。例如 `#prefer=香港.*01,台湾.*02`
 
 ##### 可用的规则值参考
 
@@ -126,6 +127,14 @@ https://cdn.jsdelivr.net/gh/powerfullz/override-rules/convert.min.js#exclude=EHe
 ```
 https://cdn.jsdelivr.net/gh/powerfullz/override-rules/convert.min.js#grouptype=1&exclude=EHentai,TikTok
 ```
+
+想让某些节点（如香港01、台湾02）优先使用，不可用时自动切回自动选择：
+
+```
+https://cdn.jsdelivr.net/gh/powerfullz/override-rules/convert.min.js#prefer=香港.*01,台湾.*02
+```
+
+> `prefer` 匹配的是订阅中的具体节点名称，不是策略组名称。如果节点名称不匹配，不会创建优先选择组。
 
 如果想第一时间体验最新加入的 ~~Bug~~ 功能，可以使用 preview 分支的 Github Raw 链接：
 

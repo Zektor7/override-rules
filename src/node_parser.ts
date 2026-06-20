@@ -107,3 +107,43 @@ export function stripNodeSuffix(groupNames: string[]): string[] {
     const suffixPattern = new RegExp(`${NODE_SUFFIX}$`);
     return groupNames.map((name) => name.replace(suffixPattern, ""));
 }
+
+/**
+ * 根据优先节点正则表达式，筛选出匹配的订阅节点名称。
+ * 对正则表达式编译和匹配进行了异常捕获以防御 ReDoS 攻击。
+ *
+ * @param config - 原始 Clash 配置
+ * @param patterns - 优先节点正则/名称列表
+ * @returns 匹配到的底层节点名称列表
+ */
+export function parsePreferNodes(config: ClashConfig, patterns: string[] | null): string[] {
+    if (!patterns || patterns.length === 0) return [];
+    const proxies = config.proxies || [];
+    const matchedNodes: string[] = [];
+
+    try {
+        // 将用户的输入编译为 RegExp 对象，捕获可能的正则语法错误
+        const regexList = patterns.map((p) => new RegExp(p, "i"));
+
+        for (const proxy of proxies) {
+            const name = proxy.name;
+            if (!name) continue;
+            // 匹配任何一个正则即判定匹配成功
+            const isMatch = regexList.some((rx) => {
+                try {
+                    return rx.test(name);
+                } catch {
+                    return false; // 防御匹配期间的异常
+                }
+            });
+            if (isMatch) {
+                matchedNodes.push(name);
+            }
+        }
+    } catch (e) {
+        console.log("[powerfullz 的覆写脚本] 优先节点正则表达式解析失败，已忽略优先选择逻辑。", e);
+        return [];
+    }
+
+    return matchedNodes;
+}

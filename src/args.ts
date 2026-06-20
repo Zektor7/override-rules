@@ -69,12 +69,26 @@ function parseRuleFilters(args: ScriptArgs): {
 }
 
 /**
+ * 解析优先选择节点参数。
+ * @param args - 原始脚本参数
+ * @returns 优先选路节点正则模式数组
+ */
+function parsePreferPatterns(args: ScriptArgs): string[] | null {
+    if (!args.prefer) return null;
+    return args.prefer
+        .split(",")
+        .map((p) => p.trim())
+        .filter(Boolean);
+}
+
+/**
  * 解析传入的脚本参数，并将其转换为内部使用的功能开关（feature flags）。
  * @param args - 从外部脚本环境（如 Substore）传入的原始参数对象
  * @returns 经过解析和类型转换后的功能开关集合 `FeatureFlags`
  */
 export function buildFeatureFlags(args: ScriptArgs): FeatureFlags {
     const { includedRules, excludedRules } = parseRuleFilters(args);
+    const preferPatterns = parsePreferPatterns(args);
 
     return {
         groupType: parseGroupType(args),
@@ -89,5 +103,6 @@ export function buildFeatureFlags(args: ScriptArgs): FeatureFlags {
         countryThreshold: parseNumber(args.threshold, 0),
         includedRules,
         excludedRules,
+        preferPatterns,
     };
 }

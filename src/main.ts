@@ -16,6 +16,7 @@ https://github.com/powerfullz/override-rules
 - regex: 使用正则过滤模式（include-all + filter）写入各地区代理组，而非直接枚举节点名称（默认 false）
 - include: 只使用指定的规则，多个用逗号分隔。示例：#include=ADBlock,Netflix,YouTube（与 exclude 冲突时优先）
 - exclude: 排除指定的规则，多个用逗号分隔。示例：#exclude=EHentai,Weibo
+- prefer: 优先选择节点（正则模式，单个或多个用逗号分隔）。匹配到的节点将组成 fallback 优先选路组，不可用时自动回退到自动选择组。示例：#prefer=香港.*01,台湾.*02
 
 源码已迁移至 `src/*.ts`。
 */
@@ -28,6 +29,7 @@ import {
     parseCountries,
     parseLowCost,
     parseNodesByLanding,
+    parsePreferNodes,
     stripNodeSuffix,
 } from "./node_parser";
 import { buildRules, getActiveProxyGroupNames } from "./rules";
@@ -69,6 +71,7 @@ const {
     countryThreshold,
     includedRules,
     excludedRules,
+    preferPatterns,
 } = buildFeatureFlags(rawArgs);
 
 function main(config: ClashConfig): ClashConfig {
@@ -76,6 +79,8 @@ function main(config: ClashConfig): ClashConfig {
     const lowCostNodes = parseLowCost(config);
     const countryGroupNames = getCountryGroupNames(countryInfo, countryThreshold);
     const countries = stripNodeSuffix(countryGroupNames);
+
+    const preferNodes = parsePreferNodes(config, preferPatterns);
 
     const { landingNodes, nonLandingNodes } = landing
         ? parseNodesByLanding(config)
@@ -93,6 +98,7 @@ function main(config: ClashConfig): ClashConfig {
         countryGroupNames,
         nonLandingNodes,
         regexFilter,
+        preferNodes,
     });
 
     const countryProxyGroups = buildCountryProxyGroups({
@@ -131,6 +137,7 @@ function main(config: ClashConfig): ClashConfig {
         frontProxySelector,
         activeProxyGroupNames,
         allProxyNames,
+        preferNodes,
     });
 
     const globalProxies = proxyGroups.map((item) => String(item.name));

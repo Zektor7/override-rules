@@ -12,6 +12,7 @@ export interface ScriptArgs {
     tun?: string;
     include?: string;
     exclude?: string;
+    prefer?: string;
 }
 
 export type GroupType = 0 | 1 | 2;
@@ -29,6 +30,7 @@ export interface FeatureFlags {
     tunEnabled: boolean;
     includedRules: Set<string> | null;
     excludedRules: Set<string>;
+    preferPatterns: string[] | null;
 }
 
 export interface ProxyNode {
@@ -205,6 +207,7 @@ export interface BuildBaseListsInput {
     countryGroupNames: string[];
     nonLandingNodes: string[];
     regexFilter: boolean;
+    preferNodes: string[];
 }
 
 export interface BuildCountryProxyGroupsInput {
@@ -232,4 +235,6 @@ export interface BuildProxyGroupsInput {
     activeProxyGroupNames: Set<string> | null;
     /** 订阅中的所有节点名称集合，用于区分普通节点和代理组 */
     allProxyNames?: Set<string>;
+    /** 优先选路节点名称列表 */
+    preferNodes: string[];
 }

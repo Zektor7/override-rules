@@ -119,6 +119,7 @@ export function buildProxyGroups({
     frontProxySelector,
     activeProxyGroupNames,
     allProxyNames,
+    preferNodes,
 }: BuildProxyGroupsInput): ProxyGroup[] {
     const hasTW = countries.includes("台湾");
     const hasHK = countries.includes("香港");
@@ -138,6 +139,7 @@ export function buildProxyGroups({
         PROXY_GROUPS.FINAL,
         PROXY_GROUPS.LOW_COST,
         PROXY_GROUPS.GLOBAL,
+        PROXY_GROUPS.PREFER,
     ]);
 
     /**
@@ -158,6 +160,17 @@ export function buildProxyGroups({
     }
 
     const groups: Array<ProxyGroup | null> = [
+        preferNodes.length > 0
+            ? {
+                  name: PROXY_GROUPS.PREFER,
+                  icon: `${CDN_URL}/gh/Koolson/Qure@master/IconSet/Color/Available_1.png`,
+                  type: "fallback",
+                  url: "https://cp.cloudflare.com/generate_204",
+                  proxies: [...preferNodes, PROXY_GROUPS.AUTO],
+                  interval: 60,
+                  tolerance: 20,
+              }
+            : null,
         {
             name: PROXY_GROUPS.SELECT,
             icon: `${CDN_URL}/gh/Koolson/Qure@master/IconSet/Color/Proxy.png`,

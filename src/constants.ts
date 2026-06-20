@@ -38,6 +38,7 @@ export const PROXY_GROUPS = {
     AD_BLOCK: "广告拦截",
     GLOBAL: "GLOBAL",
     FINAL: "Final",
+    PREFER: "优先选择",
 } as const;
 
 export const LOW_COST_NODE_MATCHER = createCaseInsensitiveNodeMatcher(
