@@ -1,5 +1,11 @@
 # Changelog
 
+## [2.6.0](https://github.com/powerfullz/override-rules/compare/src-v2.5.0...src-v2.6.0) (2026-06-20)
+
+
+### Bug Fixes
+
+- Prevent filtering out individual subscription nodes from proxy groups ([56d92d2](https://github.com/powerfullz/override-rules/commit/56d92d2c1bc1587b442ea3af921944e000147670))
 ## [2.5.0](https://github.com/powerfullz/override-rules/compare/src-v2.4.4...src-v2.5.0) (2026-06-20)
 
 
