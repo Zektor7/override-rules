@@ -228,4 +228,6 @@ export interface BuildProxyGroupsInput {
     defaultSelector: string[];
     defaultFallback: string[];
     frontProxySelector: string[];
+    /** 被规则引用的代理组名称集合；为 null 时保留所有代理组（向后兼容） */
+    activeProxyGroupNames: Set<string> | null;
 }

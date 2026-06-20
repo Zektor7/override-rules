@@ -30,7 +30,7 @@ import {
     parseNodesByLanding,
     stripNodeSuffix,
 } from "./node_parser";
-import { buildRules } from "./rules";
+import { buildRules, getActiveProxyGroupNames } from "./rules";
 import { ruleProviders } from "./rule_providers";
 import { buildDns, snifferConfig } from "./dns";
 import { buildTunConfig } from "./tun";
@@ -103,6 +103,16 @@ function main(config: ClashConfig): ClashConfig {
         countryInfo,
     });
 
+    // 先构建规则列表（受 include/exclude 过滤）
+    const finalRules = buildRules({ quicEnabled, includedRules, excludedRules });
+
+    // 从过滤后的规则中提取被引用的代理组名称
+    // 当 includedRules 和 excludedRules 均为空时传 null（保留全部代理组）
+    const activeProxyGroupNames =
+        includedRules !== null || excludedRules.size > 0
+            ? getActiveProxyGroupNames(finalRules)
+            : null;
+
     const proxyGroups = buildProxyGroups({
         landing,
         regexFilter,
@@ -116,6 +126,7 @@ function main(config: ClashConfig): ClashConfig {
         defaultSelector,
         defaultFallback,
         frontProxySelector,
+        activeProxyGroupNames,
     });
 
     const globalProxies = proxyGroups.map((item) => String(item.name));
@@ -127,7 +138,13 @@ function main(config: ClashConfig): ClashConfig {
         proxies: globalProxies,
     });
 
-    const finalRules = buildRules({ quicEnabled, includedRules, excludedRules });
+    // 从过滤后的规则中提取仍被引用的 RULE-SET 名称，过滤 rule-providers
+    const usedRuleSetNames = new Set(
+        finalRules.filter((r) => r.startsWith("RULE-SET,")).map((r) => r.split(",")[1])
+    );
+    const filteredRuleProviders = Object.fromEntries(
+        Object.entries(ruleProviders).filter(([name]) => usedRuleSetNames.has(name))
+    );
 
     return {
         proxies: config.proxies,
@@ -150,7 +167,7 @@ function main(config: ClashConfig): ClashConfig {
             profile: { "store-selected": true },
         }),
         "proxy-groups": proxyGroups,
-        "rule-providers": ruleProviders,
+        "rule-providers": filteredRuleProviders,
         rules: finalRules,
         sniffer: snifferConfig,
         dns: buildDns({ fakeIPEnabled, ipv6Enabled }),

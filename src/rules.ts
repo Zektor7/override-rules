@@ -128,3 +128,25 @@ export function buildRules({
     }
     return ruleList;
 }
+
+/**
+ * 从过滤后的规则列表中，提取所有被引用的代理组名称。
+ * 用于联动过滤 proxy-groups：仅保留至少有一条规则指向的代理组。
+ * @param rules - 经过 include/exclude 过滤后的最终规则列表
+ * @returns 被规则引用的代理组名称集合
+ */
+export function getActiveProxyGroupNames(rules: string[]): Set<string> {
+    const names = new Set<string>();
+    for (const rule of rules) {
+        const parts = rule.split(",");
+        // 规则的最后一个有效字段（排除 no-resolve 标记）即为代理组名称
+        const target =
+            parts[parts.length - 1] === "no-resolve"
+                ? parts[parts.length - 2]
+                : parts[parts.length - 1];
+        if (target && target !== "DIRECT" && target !== "REJECT" && target !== "REJECT-DROP") {
+            names.add(target);
+        }
+    }
+    return names;
+}

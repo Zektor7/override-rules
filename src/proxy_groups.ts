@@ -117,10 +117,44 @@ export function buildProxyGroups({
     defaultSelector,
     defaultFallback,
     frontProxySelector,
+    activeProxyGroupNames,
 }: BuildProxyGroupsInput): ProxyGroup[] {
     const hasTW = countries.includes("台湾");
     const hasHK = countries.includes("香港");
     const hasUS = countries.includes("美国");
+
+    /**
+     * 基础设施代理组名称集合——无论 include/exclude 如何设置都始终保留。
+     * 这些代理组是选路系统正常运作的基石，不与某条具体服务规则一一绑定。
+     */
+    const infrastructureGroups: Set<string> = new Set([
+        PROXY_GROUPS.SELECT,
+        PROXY_GROUPS.MANUAL,
+        PROXY_GROUPS.FRONT_PROXY,
+        PROXY_GROUPS.LANDING,
+        PROXY_GROUPS.AUTO,
+        PROXY_GROUPS.FALLBACK,
+        PROXY_GROUPS.FINAL,
+        PROXY_GROUPS.LOW_COST,
+        PROXY_GROUPS.GLOBAL,
+    ]);
+
+    /**
+     * 判断一个代理组是否应该被保留。
+     * - 基础设施组：始终保留
+     * - 地区节点组：始终保留（它们被基础设施组和服务组引用）
+     * - 服务类组：仅在 activeProxyGroupNames 为 null（未过滤）或包含该组名时保留
+     */
+    function shouldKeepGroup(groupName: string): boolean {
+        // 未启用过滤时保留全部
+        if (activeProxyGroupNames === null) return true;
+        // 基础设施组始终保留
+        if (infrastructureGroups.has(groupName)) return true;
+        // 地区节点组始终保留（它们被多个组引用）
+        if (countryProxyGroups.some((g) => g.name === groupName)) return true;
+        // 服务类组仅在被规则引用时保留
+        return activeProxyGroupNames.has(groupName);
+    }
 
     const groups: Array<ProxyGroup | null> = [
         {
@@ -345,5 +379,26 @@ export function buildProxyGroups({
         ...countryProxyGroups,
     ];
 
-    return groups.filter(isNotNull);
+    // 第一步：过滤掉未被规则引用的服务类代理组
+    const filtered = groups.filter(isNotNull).filter((g) => shouldKeepGroup(g.name));
+
+    // 第二步：收集保留组的名称集合，用于清理 proxies 引用
+    const retainedGroupNames = new Set(filtered.map((g) => g.name));
+
+    // 第三步：清理保留组 proxies 列表中对已删除组的引用
+    for (const group of filtered) {
+        if (group.proxies) {
+            group.proxies = group.proxies.filter(
+                (p) =>
+                    // 保留内置策略名（DIRECT、REJECT 等）
+                    p === "DIRECT" ||
+                    p === "REJECT" ||
+                    p === "REJECT-DROP" ||
+                    // 保留仍然存在的代理组
+                    retainedGroupNames.has(p)
+            );
+        }
+    }
+
+    return filtered;
 }
