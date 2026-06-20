@@ -118,6 +118,7 @@ export function buildProxyGroups({
     defaultFallback,
     frontProxySelector,
     activeProxyGroupNames,
+    allProxyNames,
 }: BuildProxyGroupsInput): ProxyGroup[] {
     const hasTW = countries.includes("台湾");
     const hasHK = countries.includes("香港");
@@ -394,6 +395,8 @@ export function buildProxyGroups({
                     p === "DIRECT" ||
                     p === "REJECT" ||
                     p === "REJECT-DROP" ||
+                    // 保留真实的订阅节点
+                    (allProxyNames && allProxyNames.has(p)) ||
                     // 保留仍然存在的代理组
                     retainedGroupNames.has(p)
             );

@@ -113,6 +113,9 @@ function main(config: ClashConfig): ClashConfig {
             ? getActiveProxyGroupNames(finalRules)
             : null;
 
+    // 收集所有订阅节点的名称集合，用以在代理组中区分普通节点和代理组引用
+    const allProxyNames = new Set((config.proxies || []).map((p) => p.name).filter(Boolean));
+
     const proxyGroups = buildProxyGroups({
         landing,
         regexFilter,
@@ -127,6 +130,7 @@ function main(config: ClashConfig): ClashConfig {
         defaultFallback,
         frontProxySelector,
         activeProxyGroupNames,
+        allProxyNames,
     });
 
     const globalProxies = proxyGroups.map((item) => String(item.name));

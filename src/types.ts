@@ -230,4 +230,6 @@ export interface BuildProxyGroupsInput {
     frontProxySelector: string[];
     /** 被规则引用的代理组名称集合；为 null 时保留所有代理组（向后兼容） */
     activeProxyGroupNames: Set<string> | null;
+    /** 订阅中的所有节点名称集合，用于区分普通节点和代理组 */
+    allProxyNames?: Set<string>;
 }
