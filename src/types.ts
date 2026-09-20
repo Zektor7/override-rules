@@ -1,7 +1,6 @@
 export interface ScriptArgs {
     grouptype?: string;
     loadbalance?: string;
-    landing?: string;
     ipv6?: string;
     full?: string;
     keepalive?: string;
@@ -19,7 +18,6 @@ export type GroupType = 0 | 1 | 2;
 
 export interface FeatureFlags {
     groupType: GroupType;
-    landing: boolean;
     ipv6Enabled: boolean;
     fullConfig: boolean;
     keepAliveEnabled: boolean;
@@ -81,10 +79,7 @@ export interface FallbackProxyGroup extends BaseProxyGroup {
 }
 
 export type ProxyGroup =
-    | SelectProxyGroup
-    | UrlTestProxyGroup
-    | LoadBalanceProxyGroup
-    | FallbackProxyGroup;
+    SelectProxyGroup | UrlTestProxyGroup | LoadBalanceProxyGroup | FallbackProxyGroup;
 
 export interface SnifferProtocolConfig {
     ports: number[];
@@ -116,12 +111,28 @@ export interface DnsConfig {
     ipv6: boolean;
     "prefer-h3": boolean;
     "enhanced-mode": "redir-host" | "fake-ip";
-    "default-nameserver": string[];
+    listen?: string;
+    "cache-algorithm"?: "lru" | "arc";
+    "use-hosts"?: boolean;
+    "use-system-hosts"?: boolean;
+    "respect-rules"?: boolean;
+    "fake-ip-range"?: string;
+    "fake-ip-range6"?: string;
+    "fake-ip-filter-mode"?: "blacklist" | "whitelist" | "rule";
+    "default-nameserver"?: string[];
     nameserver: string[];
     fallback: string[];
-    "proxy-server-nameserver": string[];
+    "proxy-server-nameserver"?: string[];
+    "direct-nameserver"?: string[];
+    "nameserver-policy"?: Record<string, DnsPolicyValue>;
+    "proxy-server-nameserver-policy"?: Record<string, DnsPolicyValue>;
+    "direct-nameserver-follow-policy"?: boolean;
+    "fallback-filter"?: Record<string, unknown>;
     "fake-ip-filter"?: string[];
 }
+
+/** Mihomo DNS Policy 支持的值类型。 */
+export type DnsPolicyValue = string | string[];
 
 export type RuleProviderType = "http" | "file";
 export type RuleProviderBehavior = "domain" | "classical" | "ipcidr";
@@ -150,6 +161,8 @@ export interface ClashProfile {
 
 export interface ClashConfig {
     proxies?: ProxyNode[];
+    /** Mihomo 根级 hosts 映射。 */
+    hosts?: Record<string, string | string[]>;
     "proxy-groups"?: ProxyGroup[];
     rules?: string[];
     "rule-providers"?: Record<string, RuleProvider>;
@@ -180,11 +193,7 @@ export interface CountryMeta {
     weight?: number;
     pattern: string;
     icon: string;
-}
-
-export interface CountryInfoItem {
-    country: string;
-    nodes: string[];
+    excludePattern?: string;
 }
 
 export interface CaseInsensitiveNodeMatcher {
@@ -203,29 +212,23 @@ export interface BaseLists {
 
 export interface BuildBaseListsInput {
     landing: boolean;
-    lowCostNodes: string[];
-    countryGroupNames: string[];
-    nonLandingNodes: string[];
+    lowCostNodes: ProxyNode[];
+    countryNames: string[];
+    nonLandingNodes: ProxyNode[];
     regexFilter: boolean;
     preferNodes: string[];
 }
 
-export interface BuildCountryProxyGroupsInput {
-    countries: string[];
-    landing: boolean;
-    groupType: GroupType;
-    regexFilter: boolean;
-    countryInfo: CountryInfoItem[];
-}
-
 export interface BuildProxyGroupsInput {
-    landing: boolean;
+    allNodes: string[];
     regexFilter: boolean;
     groupType: GroupType;
-    countries: string[];
-    countryProxyGroups: ProxyGroup[];
-    lowCostNodes: string[];
-    landingNodes: string[];
+    countryNames: string[];
+    countryNodes: Record<string, ProxyNode[]>;
+    lowCostNodes: ProxyNode[];
+    landing: boolean;
+    landingNodes: ProxyNode[];
+    tailscaleNodes: ProxyNode[];
     defaultProxies: string[];
     defaultProxiesDirect: string[];
     defaultSelector: string[];
