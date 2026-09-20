@@ -1,7 +1,6 @@
 import { PROXY_GROUPS } from "./constants";
 
 const baseRules = [
-    `DST-PORT,22,${PROXY_GROUPS.SSH}`,
     `GEOIP,private,DIRECT,no-resolve`,
     `RULE-SET,ADBlock,${PROXY_GROUPS.AD_BLOCK}`,
     `RULE-SET,AdditionalFilter,${PROXY_GROUPS.AD_BLOCK}`,
@@ -10,6 +9,8 @@ const baseRules = [
     `RULE-SET,StaticResources,${PROXY_GROUPS.STATIC_RESOURCES}`,
     `RULE-SET,CDNResources,${PROXY_GROUPS.STATIC_RESOURCES}`,
     `RULE-SET,AdditionalCDNResources,${PROXY_GROUPS.STATIC_RESOURCES}`,
+    `GEOSITE,category-cryptocurrency,${PROXY_GROUPS.CRYPTO}`,
+    `GEOSITE,category-finance,${PROXY_GROUPS.FINANCE}`,
     `GEOSITE,category-ai-!cn,${PROXY_GROUPS.AI_SERVICE}`,
     `GEOSITE,bilibili,${PROXY_GROUPS.BILIBILI}`,
     `GEOSITE,youtube,${PROXY_GROUPS.YOUTUBE}`,
@@ -34,7 +35,6 @@ const baseRules = [
     `GEOSITE,apple,${PROXY_GROUPS.APPLE}`,
     `GEOSITE,microsoft,${PROXY_GROUPS.MICROSOFT}`,
     `GEOSITE,google,${PROXY_GROUPS.GOOGLE}`,
-    `RULE-SET,Crypto,${PROXY_GROUPS.CRYPTO}`,
     `RULE-SET,GFWList,${PROXY_GROUPS.SELECT}`,
     `GEOIP,cn,DIRECT`,
     `MATCH,${PROXY_GROUPS.FINAL}`,
@@ -84,7 +84,6 @@ function shouldKeepRule(
 ): boolean {
     // 始终保留基础规则
     if (
-        rule.includes("DST-PORT,22") ||
         rule.includes("GEOIP,private") ||
         rule.includes("GEOIP,cn") ||
         rule.includes("MATCH")
@@ -110,22 +109,36 @@ function shouldKeepRule(
  * @param {boolean} params.quicEnabled - 是否启用 QUIC（如未启用会插入 UDP:443 拦截规则）
  * @param {Set<string> | null} params.includedRules - 包含的规则集合（null 表示不使用包含列表）
  * @param {Set<string>} params.excludedRules - 排除的规则集合
+ * @param {boolean} tailscale - 是否有 Tailscale 节点
  * @returns {string[]} 规则字符串数组
  */
-export function buildRules({
-    quicEnabled,
-    includedRules,
-    excludedRules,
-}: {
-    quicEnabled: boolean;
-    includedRules: Set<string> | null;
-    excludedRules: Set<string>;
-}): string[] {
+export function buildRules(
+    {
+        quicEnabled,
+        includedRules,
+        excludedRules,
+    }: {
+        quicEnabled: boolean;
+        includedRules: Set<string> | null;
+        excludedRules: Set<string>;
+    },
+    tailscale: boolean
+): string[] {
     const ruleList = baseRules.filter((rule) => shouldKeepRule(rule, includedRules, excludedRules));
+
+    // Tailscale 相关规则置于列表前部（在 QUIC 拦截规则之前）
+    if (tailscale) {
+        ruleList.unshift(
+            `DOMAIN-SUFFIX,ts.net,${PROXY_GROUPS.TAILSCALE}`,
+            `IP-CIDR,fd7a:115c:a1e0::/48,${PROXY_GROUPS.TAILSCALE},no-resolve`,
+            `IP-CIDR,100.64.0.0/10,${PROXY_GROUPS.TAILSCALE},no-resolve`
+        );
+    }
 
     if (!quicEnabled) {
         ruleList.unshift("AND,((DST-PORT,443),(NETWORK,UDP)),REJECT");
     }
+
     return ruleList;
 }
 

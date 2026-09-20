@@ -5,14 +5,14 @@ https://github.com/powerfullz/override-rules
 支持的传入参数：
 - grouptype: 地区代理组类型（0=select 手动选择, 1=url-test 自动测速, 2=load-balance 负载均衡，默认 0）
   - 向后兼容：若未传 grouptype 但传了 loadbalance，则 loadbalance=true 映射为 grouptype=2，loadbalance=false 映射为 grouptype=1
-- landing: 启用落地节点功能（如机场家宽/星链/落地分组，默认 false）
+- landing: auto-detected from nodes with `dialer-proxy` field; no user parameter needed
 - ipv6: 启用 IPv6 支持（默认 false）
 - tun: 启用 TUN 模式（默认 false）
 - full: 输出完整配置（适合纯内核启动，默认 false）
 - keepalive: 启用 tcp-keep-alive（默认 false）
 - fakeip: DNS 使用 FakeIP 模式（默认 true；传 false 时为 RedirHost）
 - quic: 允许 QUIC 流量（UDP 443，默认 false）
-- threshold: 地区节点数量小于该值时不显示分组 (默认 0)
+- threshold: 地区节点数量小于该值时不显示分组 (默认 2)
 - regex: 使用正则过滤模式（include-all + filter）写入各地区代理组，而非直接枚举节点名称（默认 false）
 - include: 只使用指定的规则，多个用逗号分隔。示例：#include=ADBlock,Netflix,YouTube（与 exclude 冲突时优先）
 - exclude: 排除指定的规则，多个用逗号分隔。示例：#exclude=EHentai,Weibo
@@ -23,14 +23,14 @@ https://github.com/powerfullz/override-rules
 
 import { CDN_URL, PROXY_GROUPS } from "./constants";
 import { buildFeatureFlags } from "./args";
-import { buildCountryProxyGroups, buildProxyGroups } from "./proxy_groups";
+import { buildProxyGroups } from "./proxy_groups";
 import {
-    getCountryGroupNames,
+    getActiveCountryNames,
     parseCountries,
     parseLowCost,
     parseNodesByLanding,
     parsePreferNodes,
-    stripNodeSuffix,
+    parseTailscale,
 } from "./node_parser";
 import { buildRules, getActiveProxyGroupNames } from "./rules";
 import { ruleProviders } from "./rule_providers";
@@ -52,7 +52,7 @@ function getRawArgs(): ScriptArgs {
     try {
         return $arguments;
     } catch {
-        console.log("[powerfullz 的覆写脚本] 未检测到传入参数，使用默认参数。", {});
+        // console.log("[powerfullz 的覆写脚本] 未检测到传入参数，使用默认参数。");
         return {};
     }
 }
@@ -60,7 +60,6 @@ function getRawArgs(): ScriptArgs {
 const rawArgs = getRawArgs();
 const {
     groupType,
-    landing,
     ipv6Enabled,
     fullConfig,
     keepAliveEnabled,
@@ -75,16 +74,19 @@ const {
 } = buildFeatureFlags(rawArgs);
 
 function main(config: ClashConfig): ClashConfig {
-    const countryInfo = parseCountries(config, landing);
-    const lowCostNodes = parseLowCost(config);
-    const countryGroupNames = getCountryGroupNames(countryInfo, countryThreshold);
-    const countries = stripNodeSuffix(countryGroupNames);
+    if (!config.proxies || !Array.isArray(config.proxies)) {
+        throw new Error("[powerfullz 的覆写脚本] 错误：Clash 配置中缺少有效的 proxies 字段");
+    }
+    const { landingNodes, nonLandingNodes } = parseNodesByLanding(config.proxies);
+    const landing = landingNodes.length > 0 && nonLandingNodes.length > 0;
+    const countryNodes = parseCountries(landing ? nonLandingNodes : config.proxies);
+    const lowCostNodes = parseLowCost(landing ? nonLandingNodes : config.proxies);
+    const countryNames = getActiveCountryNames(countryNodes, countryThreshold);
+    const allNodes = config.proxies.map((node) => node.name);
+    const tailscaleNodes = parseTailscale(config.proxies);
+    const hasTailscale = tailscaleNodes.length > 0;
 
     const preferNodes = parsePreferNodes(config, preferPatterns);
-
-    const { landingNodes, nonLandingNodes } = landing
-        ? parseNodesByLanding(config)
-        : { landingNodes: [], nonLandingNodes: [] };
 
     const {
         defaultProxies,
@@ -95,22 +97,14 @@ function main(config: ClashConfig): ClashConfig {
     } = buildBaseLists({
         landing,
         lowCostNodes,
-        countryGroupNames,
+        countryNames,
         nonLandingNodes,
         regexFilter,
         preferNodes,
     });
 
-    const countryProxyGroups = buildCountryProxyGroups({
-        countries,
-        landing,
-        groupType,
-        regexFilter,
-        countryInfo,
-    });
-
     // 先构建规则列表（受 include/exclude 过滤）
-    const finalRules = buildRules({ quicEnabled, includedRules, excludedRules });
+    const finalRules = buildRules({ quicEnabled, includedRules, excludedRules }, hasTailscale);
 
     // 从过滤后的规则中提取被引用的代理组名称
     // 当 includedRules 和 excludedRules 均为空时传 null（保留全部代理组）
@@ -120,15 +114,16 @@ function main(config: ClashConfig): ClashConfig {
             : null;
 
     // 收集所有订阅节点的名称集合，用以在代理组中区分普通节点和代理组引用
-    const allProxyNames = new Set((config.proxies || []).map((p) => p.name).filter(Boolean));
-
+    const allProxyNames = new Set(allNodes.filter(Boolean));
     const proxyGroups = buildProxyGroups({
-        landing,
+        allNodes,
         regexFilter,
         groupType,
-        countries,
-        countryProxyGroups,
+        countryNames,
+        countryNodes,
         lowCostNodes,
+        tailscaleNodes,
+        landing,
         landingNodes,
         defaultProxies,
         defaultProxiesDirect,
@@ -159,6 +154,7 @@ function main(config: ClashConfig): ClashConfig {
 
     return {
         proxies: config.proxies,
+        ...(config.hosts !== undefined && { hosts: config.hosts }),
         ...(fullConfig && {
             "mixed-port": 7890,
             "redir-port": 7892,
@@ -181,8 +177,8 @@ function main(config: ClashConfig): ClashConfig {
         "rule-providers": filteredRuleProviders,
         rules: finalRules,
         sniffer: snifferConfig,
-        dns: buildDns({ fakeIPEnabled, ipv6Enabled }),
-        tun: buildTunConfig(tunEnabled),
+        dns: buildDns({ fakeIPEnabled, ipv6Enabled, upstreamDns: config.dns }),
+        tun: buildTunConfig(tunEnabled, hasTailscale),
         "geodata-mode": true,
         "geox-url": geoxURL,
     };
