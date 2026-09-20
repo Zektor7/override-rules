@@ -83,11 +83,7 @@ function shouldKeepRule(
     excludedRules: Set<string>
 ): boolean {
     // 始终保留基础规则
-    if (
-        rule.includes("GEOIP,private") ||
-        rule.includes("GEOIP,cn") ||
-        rule.includes("MATCH")
-    ) {
+    if (rule.includes("GEOIP,private") || rule.includes("GEOIP,cn") || rule.includes("MATCH")) {
         return true;
     }
 
