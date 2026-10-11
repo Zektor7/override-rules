@@ -85,6 +85,8 @@
 
 **其他：** `EHentai`、`TikTok`、`SteamFix`、`GoogleFCM`、`GFWList`
 
+**PT：** `PT`
+
 **说明：** 基础规则（私有IP、CN直连、MATCH）始终保留，无需指定。建议使用 `include` 时配合你的实际需求，避免加载过多不需要的规则。
 
 > **向后兼容**：旧的 `loadbalance` 参数仍然可用。当 `grouptype` 未指定时，`loadbalance=true` 等价于 `grouptype=2`，`loadbalance=false` 等价于 `grouptype=1`。
@@ -122,6 +124,18 @@ https://cdn.jsdelivr.net/gh/powerfullz/override-rules/convert.min.js#exclude=EHe
 https://cdn.jsdelivr.net/gh/powerfullz/override-rules/convert.min.js#grouptype=1&exclude=EHentai,TikTok
 ```
 
+不想要 PT 站点规则（同时不加载 `PT` 规则集与「PT站点」代理组），使用`exclude=PT`参数：
+
+```
+https://cdn.jsdelivr.net/gh/powerfullz/override-rules/convert.min.js#exclude=PT
+```
+
+需要刷 PT 站、做种，可以使用`include`参数只保留 PT 与必需规则，减少规则集数量：
+
+```
+https://cdn.jsdelivr.net/gh/powerfullz/override-rules/convert.min.js#include=PT,GFWList
+```
+
 想让某些节点（如香港01、台湾02）优先使用，不可用时自动切回自动选择：
 
 ```
@@ -151,6 +165,14 @@ https://raw.githubusercontent.com/powerfullz/override-rules/refs/heads/preview/c
 ~~**Play 商店修复**：~~ 修复国行设备因使用`services.googleapis.cn`域名导致的 Google Play 下载应用时的「等待中…」问题。详见：[「Google Play 商店的国内 CDN：从密码学入门到分流策略优化」](https://blog.l3zc.com/2025/03/chinese-cdn-used-by-playstore/)，已经是默认行为。
 
 ~~**Steam 修复**：~~ 用于让 Steam 客户端调用国内 CDN 及 P2P 网络下载，节省大量流量，已经是默认行为。
+
+### 关于 PT 站点与 PT 流量的说明
+
+默认启用。`PT` 规则集包含国内外常见 PT 站（M-Team、HDSky、CHDBits、HDHome、OurBits、PTer、TTG 等）与部分公共 Tracker/动漫资源站的域名，源文件为仓库内的`ruleset/PT.list`，Fork 后可自行增删站点。不需要的用户可直接使用`exclude=PT` 关闭，此时「PT站点」代理组与规则集也不会被输出。
+
+**PT站点**：`select` 类型的代理组，默认以`DIRECT`优先（PT 站普遍依赖回源 IP 做连接与分享率统计，走机场 IP 容易触发异常登录或被判定为刷流）。如果需要固定出口 IP、在境外 seedbox 上管理站点，或访问被 DNS 污染/屏蔽的站点，可手动切到具体节点或地区组。
+
+需要说明的是，本规则只处理**域名层面**的 PT 站点分流。BT/PT 下载的数据传输面向公网 peer，目标端口由对端随机分配，无法靠域名或端口规则可靠地识别，因此不会注入任何内网或端口的强制直连规则。如果需要让下载机的全部流量直连，建议在下层设备上给下载机单独指定网关，或使用客户端层面的进程分流。
 
 ### 关于链式代理的说明
 

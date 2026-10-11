@@ -136,6 +136,16 @@ flowchart TD
 
 没有 Tailscale 节点时，上述代理组和分流规则不会生成；TUN 仍输出统一的基础配置，并额外排除 Tailscale 地址段与局域网地址段。
 
+### PT 站点分流
+
+PT 不作为独立的布尔开关，而是与 `EHentai`/`Weibo` 完全同构的一条普通规则：`baseRules` 中的 `RULE-SET,PT,PT站点` 默认存在，因此：
+
+- 「PT站点」`select` 代理组始终参与构建，候选列表使用 `defaultProxiesDirect`（`DIRECT` 优先，允许手动切代理）；
+- `exclude=PT` 时，规则、`rule-providers` 与代理组均由已有的 include/exclude 联动过滤逻辑一并剔除；
+- `include` 白名单模式下，`PT` 与其他规则标识一样需显式列出才会保留。
+
+域名集合为本仓库自维的 `ruleset/PT.list`（对齐 `EHentai`/`Weibo` 等自有规则集的托管方式），便于 Fork 者直接增删站点。PT 只覆盖域名层面的站点分流：BT/PT 下载数据面向公网 peer，端口由对端随机分配，无法靠域名/端口规则可靠识别，因此不注入内网或端口的强制直连规则，也不修改 TUN 路由排除配置。
+
 ### 数据流
 
 - **减少中间类型**：`parseCountries()` 直接返回 `Record<string, ProxyNode[]>` 而非引入额外的中间结构。`getActiveCountryNames()` 返回纯净的国家名称（不含 `"节点"` 后缀）。国家代理组的构建逻辑已内联于 `buildProxyGroups()` 中，不再需要独立的 `buildCountryProxyGroups()` 函数。
