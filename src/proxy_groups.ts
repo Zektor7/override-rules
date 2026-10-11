@@ -1,5 +1,6 @@
 import {
     CDN_URL,
+    PROJECT_URL,
     SPEEDTEST_URL,
     LOW_COST_NODE_MATCHER,
     NODE_SUFFIX,
@@ -177,7 +178,7 @@ export function buildProxyGroups({
         },
         {
             name: PROXY_GROUPS.FINANCE,
-            icon: `${CDN_URL}/gh/powerfullz/override-rules@master/icons/Nasdaq.png`,
+            icon: `${PROJECT_URL}/icons/Nasdaq.png`,
             type: "select",
             proxies: defaultProxiesDirect,
         },
@@ -195,7 +196,7 @@ export function buildProxyGroups({
         },
         {
             name: PROXY_GROUPS.MICROSOFT,
-            icon: `${CDN_URL}/gh/powerfullz/override-rules@master/icons/Microsoft_Copilot.png`,
+            icon: `${PROJECT_URL}/icons/Microsoft_Copilot.png`,
             type: "select",
             proxies: defaultProxiesDirect,
         },
@@ -257,7 +258,7 @@ export function buildProxyGroups({
         },
         {
             name: PROXY_GROUPS.TELEGRAM,
-            icon: `${CDN_URL}/gh/powerfullz/override-rules@master/icons/Telegram.png`,
+            icon: `${PROJECT_URL}/icons/Telegram.png`,
             type: "select",
             proxies: defaultProxies,
         },
@@ -276,7 +277,7 @@ export function buildProxyGroups({
         },
         {
             name: PROXY_GROUPS.TRUTH_SOCIAL,
-            icon: `${CDN_URL}/gh/powerfullz/override-rules@master/icons/Truth_Social.png`,
+            icon: `${PROJECT_URL}/icons/Truth_Social.png`,
             type: "select",
             proxies: hasUS
                 ? [`美国节点`, PROXY_GROUPS.SELECT, PROXY_GROUPS.MANUAL]
@@ -284,13 +285,13 @@ export function buildProxyGroups({
         },
         {
             name: PROXY_GROUPS.EHENTAI,
-            icon: `${CDN_URL}/gh/powerfullz/override-rules@master/icons/Ehentai.png`,
+            icon: `${PROJECT_URL}/icons/Ehentai.png`,
             type: "select",
             proxies: defaultProxies,
         },
         {
             name: PROXY_GROUPS.PIKPAK,
-            icon: `${CDN_URL}/gh/powerfullz/override-rules@master/icons/PikPak.png`,
+            icon: `${PROJECT_URL}/icons/PikPak.png`,
             type: "select",
             proxies: defaultProxies,
         },
@@ -302,14 +303,14 @@ export function buildProxyGroups({
         },
         {
             name: PROXY_GROUPS.SOGOU_INPUT,
-            icon: `${CDN_URL}/gh/powerfullz/override-rules@master/icons/Sougou.png`,
+            icon: `${PROJECT_URL}/icons/Sougou.png`,
             type: "select",
             proxies: ["DIRECT", "REJECT"],
         },
         hasTailscale
             ? {
                   name: PROXY_GROUPS.TAILSCALE,
-                  icon: `${CDN_URL}/gh/powerfullz/override-rules@master/icons/Tailscale.png`,
+                  icon: `${PROJECT_URL}/icons/Tailscale.png`,
                   type: "select",
                   proxies: tailscaleNodes.map((node) => node.name).filter(isNotNull),
               }

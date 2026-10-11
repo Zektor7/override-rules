@@ -3,6 +3,12 @@ import { createCaseInsensitiveNodeMatcher } from "./utils";
 
 export const NODE_SUFFIX = "节点";
 export const CDN_URL = "https://cdn.jsdelivr.net";
+/**
+ * 本项目自有资源（`ruleset/*.list` 与 `icons/*.png`）的 jsDelivr 基址。
+ * 指向哪个仓库/分支由这里统一控制：上游主仓库为 `powerfullz/override-rules@master`，
+ * Fork 私有部署需改成自己的仓库与分支，否则新增的 ruleset 文件会因上游不存在而 404。
+ */
+export const PROJECT_URL = `${CDN_URL}/gh/Zektor7/override-rules@main`;
 export const SPEEDTEST_URL = "https://cp.cloudflare.com";
 
 export const LOW_COST_NODE_MATCHER = createCaseInsensitiveNodeMatcher(
