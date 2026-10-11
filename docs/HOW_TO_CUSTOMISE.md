@@ -121,6 +121,19 @@ const baseRules = [
 ];
 ```
 
+### 指向你自己仓库的 ruleset 文件
+
+`src/rule_providers.ts` 中由本项目自己维护的规则集（`ruleset/*.list`）以及 `src/proxy_groups.ts` 中的自定义图标，统一通过 `src/constants.ts` 里的 `PROJECT_URL` 拼接：
+
+```typescript
+// src/constants.ts
+export const PROJECT_URL = `${CDN_URL}/gh/Zektor7/override-rules@main`;
+```
+
+> ⚠️ Fork 之后必须把这里的仓库名与分支改成你自己的，否则 Mihomo 会去下载上游仓库里并不存在的文件（例如你新增的 `ruleset/PT.list`），拿到 404 后该 Provider 会退化为空集合：对应的 `RULE-SET` 永不命中，流量被静默地交给后面的规则（通常是 `Final`）处理。
+>
+> 另外注意：`dist` 与 `preview` 分支只存放构建产物（`convert*.js`、`yamls/`），**不包含 `ruleset/` 目录**，因此 `PROJECT_URL` 应指向你的源码分支（如 `@main`）。
+
 ### 使用 GeoSite 数据库
 
 参考[v2fly/domain-list-community](https://github.com/v2fly/domain-list-community)仓库以获取你所需要的域名集合名称，并直接修改`src/rules.ts`即可。
