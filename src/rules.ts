@@ -24,6 +24,7 @@ const baseRules = [
     `GEOSITE,spotify,${PROXY_GROUPS.SPOTIFY}`,
     `GEOSITE,bahamut,${PROXY_GROUPS.BAHAMUT}`,
     `GEOSITE,pikpak,${PROXY_GROUPS.PIKPAK}`,
+    `RULE-SET,PT,${PROXY_GROUPS.PT_SITE}`,
     `GEOSITE,twitter,${PROXY_GROUPS.TWITTER}`,
     `RULE-SET,Weibo,${PROXY_GROUPS.WEIBO}`,
     `RULE-SET,EHentai,${PROXY_GROUPS.EHENTAI}`,

@@ -197,7 +197,7 @@ export function buildProxyGroups({
             name: PROXY_GROUPS.MICROSOFT,
             icon: `${CDN_URL}/gh/powerfullz/override-rules@master/icons/Microsoft_Copilot.png`,
             type: "select",
-            proxies: defaultProxies,
+            proxies: defaultProxiesDirect,
         },
         {
             name: PROXY_GROUPS.XBOX,
@@ -295,6 +295,12 @@ export function buildProxyGroups({
             proxies: defaultProxies,
         },
         {
+            name: PROXY_GROUPS.PT_SITE,
+            icon: `${CDN_URL}/gh/Koolson/Qure@master/IconSet/Color/Download.png`,
+            type: "select",
+            proxies: defaultProxiesDirect,
+        },
+        {
             name: PROXY_GROUPS.SOGOU_INPUT,
             icon: `${CDN_URL}/gh/powerfullz/override-rules@master/icons/Sougou.png`,
             type: "select",
@@ -367,8 +373,10 @@ export function buildProxyGroups({
         }),
     ];
 
-    // 第一步：过滤掉未被规则引用的服务类代理组
-    const filtered = groups.filter(isNotNull).filter((g) => shouldKeepGroup(g.name));
+    // 第一步：过滤掉 null 项与未被规则引用的服务类代理组
+    const filtered = groups
+        .filter((g): g is ProxyGroup => g !== null)
+        .filter((g) => shouldKeepGroup(g.name));
 
     // 第二步：收集保留组的名称集合，用于清理 proxies 引用
     const retainedGroupNames = new Set(filtered.map((g) => g.name));

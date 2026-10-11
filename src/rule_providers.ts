@@ -90,6 +90,14 @@ export const ruleProviders: Record<string, RuleProvider> = {
         url: `${CDN_URL}/gh/powerfullz/override-rules@master/ruleset/Weibo.list`,
         path: "./ruleset/Weibo.list",
     },
+    PT: {
+        type: "http",
+        behavior: "classical",
+        format: "text",
+        interval: 86400,
+        url: `${CDN_URL}/gh/powerfullz/override-rules@master/ruleset/PT.list`,
+        path: "./ruleset/PT.list",
+    },
     GFWList: {
         type: "http",
         behavior: "domain",
