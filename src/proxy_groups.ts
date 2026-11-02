@@ -325,7 +325,7 @@ export function buildProxyGroups({
             name: PROXY_GROUPS.FINAL,
             icon: `${CDN_URL}/gh/Koolson/Qure@master/IconSet/Color/Final.png`,
             type: "select",
-            proxies: [PROXY_GROUPS.SELECT, "DIRECT"],
+            proxies: ["DIRECT", PROXY_GROUPS.SELECT],
         },
         {
             name: PROXY_GROUPS.AUTO,
