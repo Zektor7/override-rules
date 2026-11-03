@@ -12,8 +12,11 @@ https://github.com/powerfullz/override-rules
 - keepalive: 启用 tcp-keep-alive（默认 false）
 - fakeip: DNS 使用 FakeIP 模式（默认 true；传 false 时为 RedirHost）
 - quic: 允许 QUIC 流量（UDP 443，默认 false）
-- threshold: 地区节点数量小于该值时不显示分组（默认 2）
+- threshold: 地区节点数量小于该值时不显示分组（默认 2；不足 2 个地区时自动展平）
 - regex: 使用正则过滤模式（include-all + filter）写入各地区代理组，而非直接枚举节点名称（默认 false）
+- include: 只使用指定的规则，多个用逗号分隔。示例：#include=ADBlock,Netflix,YouTube（与 exclude 冲突时优先）
+- exclude: 排除指定的规则，多个用逗号分隔。示例：#exclude=EHentai,Weibo
+- prefer: 优先选择节点（正则模式，单个或多个用逗号分隔）。匹配到的节点将组成 fallback 优先选路组，不可用时自动回退到自动选择组。示例：#prefer=香港.*01,台湾.*02
 
 源码位于 `src/`，入口为 `src/main.ts`。
 */
@@ -49,7 +52,7 @@ function main(config: ClashConfig): ClashConfig {
     }
 
     const flags = buildFeatureFlags(readRawArgs());
-    const nodes = analyzeNodes(config.proxies, flags.countryThreshold);
+    const nodes = analyzeNodes(config.proxies, flags.countryThreshold, flags.preferPatterns);
     const lists = buildBaseLists({
         landing: nodes.landing,
         landingNodes: nodes.landingNodes,
@@ -58,6 +61,7 @@ function main(config: ClashConfig): ClashConfig {
         tailscaleNodes: nodes.tailscaleNodes,
         regexFilter: flags.regexFilter,
         regions: nodes.regionLayout,
+        preferNodes: nodes.preferNodes,
     });
     const proxyGroups = buildProxyGroups({ flags, nodes, lists });
 

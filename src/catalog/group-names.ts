@@ -37,10 +37,13 @@ export const PROXY_GROUPS = {
     TWITCH: "Twitch",
     WEIBO: "新浪微博",
     PIKPAK: "PikPak网盘",
+    PT_SITE: "PT站点",
     SOGOU_INPUT: "搜狗输入法",
     AD_BLOCK: "广告拦截",
     GLOBAL: "GLOBAL",
     FINAL: "Final",
+    /** 优先选路组（本 Fork 新增，由 `prefer` 参数触发）。 */
+    PREFER: "优先选择",
 } as const;
 
 /**

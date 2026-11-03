@@ -14,6 +14,9 @@ export interface ScriptArgs {
     regex?: string;
     threshold?: string;
     tun?: string;
+    include?: string;
+    exclude?: string;
+    prefer?: string;
 }
 
 /** 地区代理组类型：0=select（手动选择），1=url-test（自动测速），2=load-balance（负载均衡）。 */
@@ -30,4 +33,10 @@ export interface FeatureFlags {
     regexFilter: boolean;
     countryThreshold: number;
     tunEnabled: boolean;
+    /** 仅保留这些规则标识（已转小写）；为 `null` 表示未启用 `include` 白名单。 */
+    includedRules: Set<string> | null;
+    /** 需要排除的规则标识（已转小写）。 */
+    excludedRules: Set<string>;
+    /** `prefer` 解析出的优先节点匹配模式；为 `null` 表示未启用优先选路。 */
+    preferPatterns: string[] | null;
 }

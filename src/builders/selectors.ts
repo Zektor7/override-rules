@@ -52,10 +52,13 @@ export function buildBaseLists({
     tailscaleNodes,
     regexFilter,
     regions,
+    preferNodes,
 }: BuildBaseListsInput): BaseLists {
     const suffixedCountryNames = regions.groupedCountries.map(countryGroupName);
     const hasLowCost = lowCostNodes.length > 0 || regexFilter;
     const isFlattened = regions.mode === "flattened";
+    // 本 Fork 新增：启用 `prefer` 且有命中节点时，「优先选择」组排在候选首位。
+    const preferCandidate = preferNodes && preferNodes.length > 0 ? PROXY_GROUPS.PREFER : null;
     const flattenedNodeSource = isFlattened
         ? buildFlattenedNodeSource(
               regions.flattenedNodes,
@@ -69,12 +72,14 @@ export function buildBaseLists({
     // 因此不再生成「手动选择」组，也不再在候选列表中引用它。
     const defaultSelector: ProxyGroupCandidate[] = isFlattened
         ? buildList<ProxyGroupCandidate>(
+              preferCandidate,
               landing && PROXY_GROUPS.LANDING,
               flattenedNodeSource,
               hasLowCost && PROXY_GROUPS.LOW_COST,
               "DIRECT"
           )
         : buildList<ProxyGroupCandidate>(
+              preferCandidate,
               PROXY_GROUPS.AUTO,
               PROXY_GROUPS.FALLBACK,
               landing && PROXY_GROUPS.LANDING,

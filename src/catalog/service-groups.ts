@@ -72,7 +72,7 @@ export const serviceGroups: ServiceGroupDef[] = [
     {
         name: PROXY_GROUPS.MICROSOFT,
         icon: ICONS.microsoft,
-        proxies: (ctx) => ctx.lists.defaultProxies,
+        proxies: (ctx) => ctx.lists.defaultProxiesDirect,
     },
     {
         name: PROXY_GROUPS.XBOX,
@@ -174,6 +174,12 @@ export const serviceGroups: ServiceGroupDef[] = [
         name: PROXY_GROUPS.PIKPAK,
         icon: ICONS.pikpak,
         proxies: (ctx) => ctx.lists.defaultProxies,
+    },
+    {
+        // 本 Fork 新增：PT 站普遍依赖回源 IP 统计连接与分享率，默认 DIRECT 优先，允许手动切代理。
+        name: PROXY_GROUPS.PT_SITE,
+        icon: ICONS.ptSite,
+        proxies: (ctx) => ctx.lists.defaultProxiesDirect,
     },
     {
         name: PROXY_GROUPS.SOGOU_INPUT,

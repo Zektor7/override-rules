@@ -5,7 +5,7 @@
  * 通过 `RuleSetKey` 类型约束，改名时 `builders/rules.ts` 会在编译期报错，避免静默失效。
  */
 
-import { CDN_URL } from "./endpoints";
+import { CDN_URL, PROJECT_URL } from "./endpoints";
 import type { RuleProvider } from "../types/clash";
 
 export const ruleSets = {
@@ -46,7 +46,7 @@ export const ruleSets = {
         behavior: "classical",
         format: "text",
         interval: 86400,
-        url: `${CDN_URL}/gh/powerfullz/override-rules@master/ruleset/TikTok.list`,
+        url: `${PROJECT_URL}/ruleset/TikTok.list`,
         path: "./ruleset/TikTok.list",
     },
     EHentai: {
@@ -54,7 +54,7 @@ export const ruleSets = {
         behavior: "classical",
         format: "text",
         interval: 86400,
-        url: `${CDN_URL}/gh/powerfullz/override-rules@master/ruleset/EHentai.list`,
+        url: `${PROJECT_URL}/ruleset/EHentai.list`,
         path: "./ruleset/EHentai.list",
     },
     SteamFix: {
@@ -62,7 +62,7 @@ export const ruleSets = {
         behavior: "classical",
         format: "text",
         interval: 86400,
-        url: `${CDN_URL}/gh/powerfullz/override-rules@master/ruleset/SteamFix.list`,
+        url: `${PROJECT_URL}/ruleset/SteamFix.list`,
         path: "./ruleset/SteamFix.list",
     },
     GoogleFCM: {
@@ -70,7 +70,7 @@ export const ruleSets = {
         behavior: "classical",
         format: "text",
         interval: 86400,
-        url: `${CDN_URL}/gh/powerfullz/override-rules@master/ruleset/FirebaseCloudMessaging.list`,
+        url: `${PROJECT_URL}/ruleset/FirebaseCloudMessaging.list`,
         path: "./ruleset/FirebaseCloudMessaging.list",
     },
     AdditionalFilter: {
@@ -78,7 +78,7 @@ export const ruleSets = {
         behavior: "classical",
         format: "text",
         interval: 86400,
-        url: `${CDN_URL}/gh/powerfullz/override-rules@master/ruleset/AdditionalFilter.list`,
+        url: `${PROJECT_URL}/ruleset/AdditionalFilter.list`,
         path: "./ruleset/AdditionalFilter.list",
     },
     AdditionalCDNResources: {
@@ -86,7 +86,7 @@ export const ruleSets = {
         behavior: "classical",
         format: "text",
         interval: 86400,
-        url: `${CDN_URL}/gh/powerfullz/override-rules@master/ruleset/AdditionalCDNResources.list`,
+        url: `${PROJECT_URL}/ruleset/AdditionalCDNResources.list`,
         path: "./ruleset/AdditionalCDNResources.list",
     },
     Weibo: {
@@ -94,8 +94,16 @@ export const ruleSets = {
         behavior: "classical",
         format: "text",
         interval: 86400,
-        url: `${CDN_URL}/gh/powerfullz/override-rules@master/ruleset/Weibo.list`,
+        url: `${PROJECT_URL}/ruleset/Weibo.list`,
         path: "./ruleset/Weibo.list",
+    },
+    PT: {
+        type: "http",
+        behavior: "classical",
+        format: "text",
+        interval: 86400,
+        url: `${PROJECT_URL}/ruleset/PT.list`,
+        path: "./ruleset/PT.list",
     },
     GFWList: {
         type: "http",

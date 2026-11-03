@@ -24,10 +24,51 @@ function parseGroupType(args: ScriptArgs): GroupType {
 }
 
 /**
+ * 解析规则过滤参数（本 Fork 新增）。
+ * - `include`：只使用指定的规则（逗号分隔，大小写不敏感）；
+ * - `exclude`：排除指定的规则（逗号分隔，大小写不敏感）；
+ * - 两者同时给出时 `include` 优先。
+ * @param args - 原始字符串参数
+ */
+function parseRuleFilters(args: ScriptArgs): {
+    includedRules: Set<string> | null;
+    excludedRules: Set<string>;
+} {
+    const toSet = (value: string): Set<string> =>
+        new Set(
+            value
+                .split(",")
+                .map((rule) => rule.trim().toLowerCase())
+                .filter(Boolean)
+        );
+
+    if (args.include) {
+        return { includedRules: toSet(args.include), excludedRules: new Set() };
+    }
+
+    return { includedRules: null, excludedRules: toSet(args.exclude || "") };
+}
+
+/**
+ * 解析优先选路参数（本 Fork 新增）。
+ * @param args - 原始字符串参数
+ * @returns 优先节点匹配模式数组；未传参时为 `null`
+ */
+function parsePreferPatterns(args: ScriptArgs): string[] | null {
+    if (!args.prefer) return null;
+    return args.prefer
+        .split(",")
+        .map((pattern) => pattern.trim())
+        .filter(Boolean);
+}
+
+/**
  * 解析传入的脚本参数，并转换为内部使用的功能开关。
  * @param args - 从脚本环境（如 Substore）传入的原始参数对象
  */
 export function buildFeatureFlags(args: ScriptArgs): FeatureFlags {
+    const { includedRules, excludedRules } = parseRuleFilters(args);
+
     return {
         groupType: parseGroupType(args),
         ipv6Enabled: parseBool(args.ipv6),
@@ -38,5 +79,8 @@ export function buildFeatureFlags(args: ScriptArgs): FeatureFlags {
         regexFilter: parseBool(args.regex),
         tunEnabled: parseBool(args.tun),
         countryThreshold: parseNumber(args.threshold, ARG_DEFAULTS.countryThreshold),
+        includedRules,
+        excludedRules,
+        preferPatterns: parsePreferPatterns(args),
     };
 }

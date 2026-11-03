@@ -9,6 +9,7 @@ import { countryExcludeRegexMap, countryRegexMap } from "../catalog/countries";
 import { PROXY_GROUPS } from "../catalog/group-names";
 import { LOW_COST_NODE_MATCHER } from "../catalog/low-cost";
 import { getActiveCountryNames } from "./active-countries";
+import { collectPreferNodes } from "./prefer-nodes";
 import type { NodeAnalysis, ProxyNode, RegionLayout } from "../types/proxy";
 
 /** 生成地区组所需的最少达标地区数；不足时展平到上层代理组。 */
@@ -84,8 +85,13 @@ function excludeTailscale(nodes: ProxyNode[]): ProxyNode[] {
  * 对节点列表执行全部分类。
  * @param nodes - 上游订阅的节点列表（`config.proxies`）
  * @param threshold - 地区节点数量的最小阈值
+ * @param preferPatterns - `prefer` 参数解析出的优先节点模式（本 Fork 新增），不传时不做优先匹配
  */
-export function analyzeNodes(nodes: ProxyNode[], threshold: number): NodeAnalysis {
+export function analyzeNodes(
+    nodes: ProxyNode[],
+    threshold: number,
+    preferPatterns: string[] | null = null
+): NodeAnalysis {
     const { landingNodes, nonLandingNodes } = splitByLanding(nodes);
     // 只要出现落地节点就启用落地相关代理组；全落地时非落地候选自然为空。
     const landing = landingNodes.length > 0;
@@ -118,5 +124,6 @@ export function analyzeNodes(nodes: ProxyNode[], threshold: number): NodeAnalysi
         lowCostNodes,
         tailscaleNodes,
         hasTailscale: tailscaleNodes.length > 0,
+        preferNodes: collectPreferNodes(nodes, preferPatterns),
     };
 }

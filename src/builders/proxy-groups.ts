@@ -23,8 +23,17 @@ import { isNotNull } from "../utils/primitives";
 import { buildNodeExcludeFilter, combineExcludeFilters } from "../utils/regex";
 import type { GroupBuildContext, ProxyGroup } from "../types/proxy";
 
-/** 顶层选择类代理组：选择代理、手动选择、以及链式代理相关组。 */
+/** 顶层选择类代理组：优先选路、选择代理、手动选择、以及链式代理相关组。 */
 function buildFrontGroups(ctx: GroupBuildContext): Array<ProxyGroup | null> {
+    // 本 Fork 新增：`prefer` 命中的节点组成 fallback 优先选路组，不可用时自动回退到「自动选择」。
+    const preferGroup =
+        ctx.nodes.preferNodes.length > 0
+            ? fallbackGroup(PROXY_GROUPS.PREFER, ICONS.prefer, [
+                  ...ctx.nodes.preferNodes,
+                  PROXY_GROUPS.AUTO,
+              ])
+            : null;
+
     // 展平模式下「选择代理」已直接列出全部非落地节点，不再生成高度重合的「手动选择」组。
     // 分组模式保留该组：regex 模式交给内核动态填充，否则按上游顺序枚举。
     const manualGroup =
@@ -39,6 +48,7 @@ function buildFrontGroups(ctx: GroupBuildContext): Array<ProxyGroup | null> {
             : null;
 
     return [
+        preferGroup,
         selectGroup(PROXY_GROUPS.SELECT, ICONS.select, ctx.lists.defaultSelector),
         manualGroup,
         ctx.nodes.landing
@@ -74,7 +84,7 @@ function buildTailGroups(ctx: GroupBuildContext): Array<ProxyGroup | null> {
               )
             : null,
         selectGroup(PROXY_GROUPS.AD_BLOCK, ICONS.adBlock, ["REJECT", "REJECT-DROP", "DIRECT"]),
-        selectGroup(PROXY_GROUPS.FINAL, ICONS.final, [PROXY_GROUPS.SELECT, "DIRECT"]),
+        selectGroup(PROXY_GROUPS.FINAL, ICONS.final, ["DIRECT", PROXY_GROUPS.SELECT]),
         urlTestGroup(PROXY_GROUPS.AUTO, ICONS.auto, ctx.lists.defaultFallback),
         fallbackGroup(PROXY_GROUPS.FALLBACK, ICONS.fallback, ctx.lists.defaultFallback),
     ];

@@ -121,6 +121,8 @@ export interface BuildBaseListsInput {
     tailscaleNodes: ProxyNode[];
     regexFilter: boolean;
     regions: RegionLayout;
+    /** 优先选路节点名称（本 Fork 新增），非空时置于「选择代理」候选首位。 */
+    preferNodes?: string[];
 }
 
 /** 节点经过多维度分类后的结果，是配置构建阶段的唯一节点数据来源。 */
@@ -147,6 +149,8 @@ export interface NodeAnalysis {
     tailscaleNodes: ProxyNode[];
     /** 是否存在 Tailscale 节点。 */
     hasTailscale: boolean;
+    /** 匹配 `prefer` 模式的节点名称（本 Fork 新增），为空时不生成「优先选择」组。 */
+    preferNodes: string[];
 }
 
 /** 代理组构建阶段共享的上下文。 */

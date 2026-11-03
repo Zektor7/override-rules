@@ -4,13 +4,13 @@
  * 所有图标都通过 CDN 前缀拼接得到，变更图标或更换 CDN 只需修改此处。
  */
 
-import { CDN_URL } from "./endpoints";
+import { CDN_URL, PROJECT_URL } from "./endpoints";
 
 /** Koolson/Qure 彩色图标集。 */
 const QURE = `${CDN_URL}/gh/Koolson/Qure@master/IconSet/Color`;
 
-/** 本仓库自带图标。 */
-const SELF = `${CDN_URL}/gh/powerfullz/override-rules@master/icons`;
+/** 本仓库自带图标（指向 `PROJECT_URL`，Fork 后随自有仓库一起变更）。 */
+const SELF = `${PROJECT_URL}/icons`;
 
 /** shindgewongxj/WHATSINStash 图标集。 */
 const STASH = `${CDN_URL}/gh/shindgewongxj/WHATSINStash@master/icon`;
@@ -21,6 +21,7 @@ const MINI = `${CDN_URL}/gh/Orz-3/mini@master/Color`;
 /** 各代理组对应的图标 URL。 */
 export const ICONS = {
     select: `${QURE}/Proxy.png`,
+    prefer: `${QURE}/Available_1.png`,
     manual: `${STASH}/select.png`,
     frontProxy: `${QURE}/Area.png`,
     landing: `${QURE}/Airport.png`,
@@ -46,6 +47,7 @@ export const ICONS = {
     truthSocial: `${SELF}/Truth_Social.png`,
     ehentai: `${SELF}/Ehentai.png`,
     pikpak: `${SELF}/PikPak.png`,
+    ptSite: `${QURE}/Download.png`,
     sogouInput: `${SELF}/Sougou.png`,
     tailscale: `${SELF}/Tailscale.png`,
     adBlock: `${QURE}/AdBlack.png`,

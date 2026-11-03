@@ -8,6 +8,7 @@ import { ruleSets } from "../catalog/rule-sets";
 import { buildDns } from "./dns";
 import { buildFullConfig } from "./full-config";
 import { geoxUrl } from "./geox";
+import { filterProxyGroupsByRules, filterRuleSetsByRules } from "./rule-filter";
 import { buildRules } from "./rules";
 import { snifferConfig } from "./sniffer";
 import { buildTunConfig } from "./tun";
@@ -49,13 +50,30 @@ export function assembleConfig(
     config: ClashConfig,
     { flags, nodes, proxyGroups }: AssembleConfigInput
 ): ClashConfig {
+    const rules = buildRules({
+        quicEnabled: flags.quicEnabled,
+        hasTailscale: nodes.hasTailscale,
+        includedRules: flags.includedRules,
+        excludedRules: flags.excludedRules,
+    });
+
+    // 本 Fork 新增：启用 include/exclude 时，由剩余规则反推未被使用的代理组与规则集并一并剔除。
+    const isRuleFiltering = flags.includedRules !== null || flags.excludedRules.size > 0;
+    const finalProxyGroups = isRuleFiltering
+        ? filterProxyGroupsByRules(proxyGroups, rules, {
+              countryNames: nodes.regionLayout.groupedCountries,
+              allProxyNames: new Set(nodes.allNodes.map((node) => node.name)),
+          })
+        : proxyGroups;
+    const finalRuleSets = isRuleFiltering ? filterRuleSetsByRules(ruleSets, rules) : ruleSets;
+
     return {
         proxies: config.proxies,
         ...(config.hosts !== undefined && { hosts: config.hosts }),
         ...(flags.fullConfig && buildFullConfig(flags)),
-        "proxy-groups": appendGlobalGroup(proxyGroups),
-        "rule-providers": ruleSets,
-        rules: buildRules({ quicEnabled: flags.quicEnabled, hasTailscale: nodes.hasTailscale }),
+        "proxy-groups": appendGlobalGroup(finalProxyGroups),
+        "rule-providers": finalRuleSets,
+        rules,
         sniffer: snifferConfig,
         dns: buildDns({
             fakeIPEnabled: flags.fakeIPEnabled,
