@@ -108,40 +108,42 @@
 https://cdn.jsdelivr.net/gh/powerfullz/override-rules/convert.min.js#grouptype=1
 ```
 
+> 以下 `include` / `exclude` / `prefer` 与「PT站点」分流属于本 Fork 的扩展，只有本 Fork 构建的产物才认识这些参数（引用上游 `powerfullz` 的产物时它们会被静默忽略），因此示例链接指向 `Zektor7/override-rules`。
+
 只想使用广告、Netflix 和 YouTube 规则，减少规则集数量，使用`include=ADBlock,Netflix,YouTube`参数：
 
 ```
-https://cdn.jsdelivr.net/gh/powerfullz/override-rules/convert.min.js#include=ADBlock,Netflix,YouTube
+https://cdn.jsdelivr.net/gh/Zektor7/override-rules/convert.min.js#include=ADBlock,Netflix,YouTube
 ```
 
 不想要 E-Hentai 和微博规则，使用`exclude=EHentai,Weibo`参数：
 
 ```
-https://cdn.jsdelivr.net/gh/powerfullz/override-rules/convert.min.js#exclude=EHentai,Weibo
+https://cdn.jsdelivr.net/gh/Zektor7/override-rules/convert.min.js#exclude=EHentai,Weibo
 ```
 
 组合多个参数，例如启用自动测速并排除某些规则：
 
 ```
-https://cdn.jsdelivr.net/gh/powerfullz/override-rules/convert.min.js#grouptype=1&exclude=EHentai,TikTok
+https://cdn.jsdelivr.net/gh/Zektor7/override-rules/convert.min.js#grouptype=1&exclude=EHentai,TikTok
 ```
 
 不想要 PT 站点规则（同时不加载 `PT` 规则集与「PT站点」代理组），使用`exclude=PT`参数：
 
 ```
-https://cdn.jsdelivr.net/gh/powerfullz/override-rules/convert.min.js#exclude=PT
+https://cdn.jsdelivr.net/gh/Zektor7/override-rules/convert.min.js#exclude=PT
 ```
 
 需要刷 PT 站、做种，可以使用`include`参数只保留 PT 与必需规则，减少规则集数量：
 
 ```
-https://cdn.jsdelivr.net/gh/powerfullz/override-rules/convert.min.js#include=PT,GFWList
+https://cdn.jsdelivr.net/gh/Zektor7/override-rules/convert.min.js#include=PT,GFWList
 ```
 
 想让某些节点（如香港01、台湾02）优先使用，不可用时自动切回自动选择：
 
 ```
-https://cdn.jsdelivr.net/gh/powerfullz/override-rules/convert.min.js#prefer=香港.*01,台湾.*02
+https://cdn.jsdelivr.net/gh/Zektor7/override-rules/convert.min.js#prefer=香港.*01,台湾.*02
 ```
 
 > `prefer` 匹配的是订阅中的具体节点名称，不是策略组名称。如果节点名称不匹配，不会创建优先选择组。
