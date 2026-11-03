@@ -136,10 +136,10 @@ ruleSet("exampleProvider", PROXY_GROUPS.MY_CUSTOM_GROUP),
 
 ### 指向你自己仓库的 ruleset 文件
 
-`src/rule_providers.ts` 中由本项目自己维护的规则集（`ruleset/*.list`）以及 `src/proxy_groups.ts` 中的自定义图标，统一通过 `src/constants.ts` 里的 `PROJECT_URL` 拼接：
+`src/catalog/rule-sets.ts` 中由本项目自己维护的规则集（`ruleset/*.list`）以及 `src/catalog/icons.ts` 中的自定义图标，统一通过 `src/catalog/endpoints.ts` 里的 `PROJECT_URL` 拼接：
 
 ```typescript
-// src/constants.ts
+// src/catalog/endpoints.ts
 export const PROJECT_URL = `${CDN_URL}/gh/Zektor7/override-rules@main`;
 ```
 

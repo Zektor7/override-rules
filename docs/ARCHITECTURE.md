@@ -68,7 +68,7 @@ flowchart TD
 | `src/types/clash.ts` | Clash 配置结构类型 | `ClashConfig`, `DnsConfig`, `TunConfig`, `SnifferConfig`, `RuleProvider` |
 | `src/args/schema.ts` | URL 参数默认值的唯一来源 | `ARG_DEFAULTS` |
 | `src/args/parse.ts` | URL 参数解析与默认值回填 | `buildFeatureFlags()` |
-| `src/catalog/endpoints.ts` | CDN 与测速端点 | `CDN_URL`, `SPEEDTEST_URL` |
+| `src/catalog/endpoints.ts` | CDN、自有仓库与测速端点 | `CDN_URL`, `PROJECT_URL`, `SPEEDTEST_URL` |
 | `src/catalog/dns.ts` | DNS 默认服务器与 fake-ip 过滤域名 | `DEFAULT_NAMESERVERS`, `DEFAULT_FALLBACK_DNS`, `FAKE_IP_FILTER` |
 | `src/catalog/icons.ts` | 代理组图标集中定义 | `ICONS` |
 | `src/catalog/group-names.ts` | 代理组名称与命名辅助 | `PROXY_GROUPS`, `NODE_SUFFIX`, `countryGroupName()` |
@@ -78,10 +78,12 @@ flowchart TD
 | `src/catalog/rule-sets.ts` | Rule Provider 注册表（强类型键） | `ruleSets`, `RuleSetKey`, `ruleSet()` |
 | `src/analysis/classify.ts` | 节点多维度分类 | `analyzeNodes()` |
 | `src/analysis/active-countries.ts` | 地区阈值过滤与权重排序 | `getActiveCountryNames()` |
+| `src/analysis/prefer-nodes.ts` | `prefer` 优先节点正则匹配（Fork 扩展） | `collectPreferNodes()` |
 | `src/domain/proxy-group.ts` | 代理组构造工厂（字段顺序与空候选兜底集中管理） | `buildGroupByType()`, `selectGroup()`, `urlTestGroup()`, `fallbackGroup()` |
 | `src/builders/selectors.ts` | 各策略组的基础候选列表 | `buildBaseLists()` |
 | `src/builders/proxy-groups.ts` | 代理组组装（前置/服务/尾部/地区） | `buildProxyGroups()` |
 | `src/builders/rules.ts` | 路由规则构建 | `buildRules()` |
+| `src/builders/rule-filter.ts` | `include`/`exclude` 规则裁剪与代理组/规则集联动剔除（Fork 扩展） | `shouldKeepRule()`, `filterProxyGroupsByRules()`, `filterRuleSetsByRules()` |
 | `src/builders/rule-set` 引用 | 规则集名称受 `RuleSetKey` 约束，改名可编译期报错 | — |
 | `src/builders/dns.ts` | DNS 核心配置生成与上游字段合并 | `buildDns()` |
 | `src/builders/sniffer.ts` | 域名嗅探配置 | `snifferConfig` |
@@ -141,13 +143,28 @@ flowchart TD
 
 ### PT 站点分流
 
-PT 不作为独立的布尔开关，而是与 `EHentai`/`Weibo` 完全同构的一条普通规则：`baseRules` 中的 `RULE-SET,PT,PT站点` 默认存在，因此：
+PT 不作为独立的布尔开关，而是与 `EHentai`/`Weibo` 完全同构的一条普通规则：`buildRules()` 规则列表中的 `RULE-SET,PT,PT站点` 默认存在，因此：
 
-- 「PT站点」`select` 代理组始终参与构建，候选列表使用 `defaultProxiesDirect`（`DIRECT` 优先，允许手动切代理）；
+- 「PT站点」`select` 代理组在 `catalog/service-groups.ts` 中与其余服务组一同声明，候选列表使用 `defaultProxiesDirect`（`DIRECT` 优先，允许手动切代理）；
 - `exclude=PT` 时，规则、`rule-providers` 与代理组均由已有的 include/exclude 联动过滤逻辑一并剔除；
 - `include` 白名单模式下，`PT` 与其他规则标识一样需显式列出才会保留。
 
 域名集合为本仓库自维的 `ruleset/PT.list`（对齐 `EHentai`/`Weibo` 等自有规则集的托管方式），便于 Fork 者直接增删站点。PT 只覆盖域名层面的站点分流：BT/PT 下载数据面向公网 peer，端口由对端随机分配，无法靠域名/端口规则可靠识别，因此不注入内网或端口的强制直连规则，也不修改 TUN 路由排除配置。
+
+### 规则过滤与优先选路（Fork 扩展）
+
+以下两个能力属于本 Fork 的扩展，实现集中在 `src/builders/rule-filter.ts` 与 `src/analysis/prefer-nodes.ts`，对上游模块只保持最小接入点，便于后续同步上游。
+
+**`include` / `exclude` 联动过滤**：过滤发生在最终组装阶段（`builders/config.ts`），链路为「规则 → 代理组 → 规则集」：
+
+1. `buildRules()` 按标识（规则集名、GEOSITE/GEOIP 键、`DOMAIN-SUFFIX` 域名）裁剪规则，基础规则（私有地址、CN 直连、`MATCH`）始终保留；QUIC 拦截与 Tailscale 定向分流规则不参与裁剪。
+2. 由裁剪后的规则反推被引用的代理组，剔除未使用的服务组；基础设施组（`选择代理`/`手动选择`/`自动选择`/`故障转移`/`Final`/`低倍率节点`/`前置代理`/`落地节点`/`GLOBAL`/`优先选择`/`Tailscale`）与地区组始终保留，否则选路体系会失去基石。
+3. 清理保留组候选列表里指向已删除组的悬空引用；列表被清空且未启用 `include-all` 时补入 `DIRECT`，与 `domain/proxy-group.ts` 的空组保护一致。
+4. `rule-providers` 只保留仍被 `RULE-SET` 引用的条目，避免客户端下载无用规则集。
+
+`GLOBAL` 组在裁剪之后追加，因此其候选也不会包含被剔除的组。两个参数都不传时过滤完全不启用，输出与上游行为一致。
+
+**`prefer` 优先选路**：`collectPreferNodes()` 在节点分类阶段匹配订阅节点名称（支持正则、大小写不敏感，并捕获编译/匹配异常），命中的节点组成「优先选择」`fallback` 组（候选为「命中节点 + `自动选择`」）并置于代理组列表首位，同时排在 `选择代理` 候选首位；未传参或无命中节点时不生成该组。
 
 ### 数据流
 
@@ -163,6 +180,8 @@ PT 不作为独立的布尔开关，而是与 `EHentai`/`Weibo` 完全同构的�
 - `fakeip=true`；
 - `threshold=2`，少于两个节点的地区不会生成地区组；过滤后不足 2 个地区时整体展平；
 - `ipv6`、`full`、`keepalive`、`quic`、`regex`、`tun` 默认关闭。
+
+本 Fork 新增的 `include`、`exclude`、`prefer` 没有默认值：不传参时分别表示「不过滤规则」与「不启用优先选路」。`include` 与 `exclude` 同时传入时 `include` 优先。
 
 布尔参数接受 `true`/`false` 和 `1`/`0` 形式。
 
