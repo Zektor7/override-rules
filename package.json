@@ -1,7 +1,7 @@
 {
   "name": "override-rules",
   "private": true,
-  "version": "2.7.6",
+  "version": "2.9.2",
   "description": "Override rules YAML generator",
   "license": "MIT",
   "type": "commonjs",
@@ -9,6 +9,7 @@
     "typecheck": "node node_modules/typescript-native/bin/tsc --noEmit",
     "build": "npm run typecheck && node scripts/build.mjs",
     "generate": "tsx scripts/yaml_generator/generator.ts",
+    "test": "node --import tsx --test \"tests/**/*.test.ts\"",
     "artifacts": "npm run build && npm run generate",
     "lint": "eslint .",
     "lint:fix": "eslint . --fix",

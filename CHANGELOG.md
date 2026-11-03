@@ -1,5 +1,107 @@
 # Changelog
 
+## [2.9.2](https://github.com/powerfullz/override-rules/compare/src-v2.9.1...src-v2.9.2) (2026-11-03)
+
+
+### Refactoring
+
+- 重构 DNS 构建与上游字段继承 ([9a8e739](https://github.com/powerfullz/override-rules/commit/9a8e7395d4a5eff8b00c68f7a1dd6f46e50af582))
+## [2.9.1](https://github.com/powerfullz/override-rules/compare/src-v2.9.0...src-v2.9.1) (2026-10-25)
+
+
+### Features
+
+- Tailscale 代理组现在会自动隐藏 ([360ac8f](https://github.com/powerfullz/override-rules/commit/360ac8fa02e805a638c362648ccb27831fe73921))
+- Tun模式默认网络栈采用 mips ([193be43](https://github.com/powerfullz/override-rules/commit/193be43f8fd12f707401782090202abe76e77038))
+## [2.9.0](https://github.com/powerfullz/override-rules/compare/src-v2.8.2...src-v2.9.0) (2026-10-25)
+
+
+### Bug Fixes
+
+- 空代理组候选统一回退 DIRECT ([a4e3407](https://github.com/powerfullz/override-rules/commit/a4e34078909c341b6d5fd9702a7cd910d4d8c8cd))
+
+
+### Chores
+
+- Use a more intuitive name for `selectors.ts` ([a3d2000](https://github.com/powerfullz/override-rules/commit/a3d20005abd9379c9360290fc300fd078df3fbc1))
+
+
+### Documentation
+
+- Update docs ([a161662](https://github.com/powerfullz/override-rules/commit/a161662b6c8aa5aafddb5985078f39ade5531a2b))
+- 同步静态资源组低倍率优先说明 ([131c1d1](https://github.com/powerfullz/override-rules/commit/131c1d14a6f4aa72bfa2f6398ed22c10e515d5d1))
+- 同步服务组扁平化说明 ([2c20198](https://github.com/powerfullz/override-rules/commit/2c20198dc41842839f41f866f8d5e3564f440c2c))
+- 同步展平模式手动选择组说明 ([044a25a](https://github.com/powerfullz/override-rules/commit/044a25ac130f5ce4f9cdd244c6cdebe7d4a0e40c))
+- 说明空代理组兜底行为 ([81d4920](https://github.com/powerfullz/override-rules/commit/81d4920d840c5ab094be8eea6448b82788fcec27))
+
+
+### Features
+
+- 静态资源组优先使用低倍率节点 ([8c5a40b](https://github.com/powerfullz/override-rules/commit/8c5a40b519d896cba1f4578c81459aed650b4516))
+- 展平模式下服务组直接使用节点候选 ([7f6adc2](https://github.com/powerfullz/override-rules/commit/7f6adc21f9c74e5b30e9a7f4b75711421f93605f))
+- 展平模式移除手动选择组 ([209bcf6](https://github.com/powerfullz/override-rules/commit/209bcf6f38cdbc352be7e1995794eb47e64bb9ad))
+
+
+### Other
+
+- 合并主线并保留代理组兜底决策 ([afe2e89](https://github.com/powerfullz/override-rules/commit/afe2e89438f152a25f5b392f51c66f2ca5414ba0))
+## [2.8.2](https://github.com/powerfullz/override-rules/compare/src-v2.8.1...src-v2.8.2) (2026-10-21)
+
+
+### Bug Fixes
+
+- 静态 YAML 的手动选择组改用 include-all ([5dbf0dd](https://github.com/powerfullz/override-rules/commit/5dbf0ddd993c427945121410bb0168609d179430))
+
+
+### Documentation
+
+- 同步 regex 模式对「手动选择」组的说明 ([b6f16e2](https://github.com/powerfullz/override-rules/commit/b6f16e24a08782bbae3f1e7fc92bd400d8740e15))
+## [2.8.1](https://github.com/powerfullz/override-rules/compare/src-v2.8.0...src-v2.8.1) (2026-10-21)
+
+
+### Bug Fixes
+
+- Correct the logic of the previous fix ([cdaa300](https://github.com/powerfullz/override-rules/commit/cdaa300af461954fe21998fa076658915b244499))
+- DIRECT and manual proxy group now only show up when no country groups are available ([f9c1aa9](https://github.com/powerfullz/override-rules/commit/f9c1aa998f028eb30e22b96d9c2e69f4212dc740))
+
+
+### Chores
+
+- Add `.editorconfig` ([9a78daa](https://github.com/powerfullz/override-rules/commit/9a78daa6d70aaf81bec81b9ae1294727a22716ad))
+- 去除 AI Sop 词语 ([8cc4db8](https://github.com/powerfullz/override-rules/commit/8cc4db81f5507c2fb09503b87df661633f6a2ab7))
+
+
+### Documentation
+
+- 同步地区组展平行为说明 ([bbd556d](https://github.com/powerfullz/override-rules/commit/bbd556d0566559da669499ec0e878aa7440a76e5))
+- 定稿地区组展平方案 (issue #64) ([7e96280](https://github.com/powerfullz/override-rules/commit/7e96280caa1542afb50121b6d6b994dd214e90b0))
+
+
+### Features
+
+- 展平不足两个地区的代理组结构 ([e59519d](https://github.com/powerfullz/override-rules/commit/e59519dfe20ccad351a2bd1003a73beb7b542b02))
+## [2.8.0](https://github.com/powerfullz/override-rules/compare/src-v2.7.6...src-v2.8.0) (2026-10-20)
+
+
+### Bug Fixes
+
+- 修复无地区组时 fallback 空 proxies 导致的启动报错 ([0e85728](https://github.com/powerfullz/override-rules/commit/0e857289b9e4e5caa410231d1ba40af1f82477bc))
+
+
+### Documentation
+
+- 添加地区组展平优化草案 (issue #64) ([411920e](https://github.com/powerfullz/override-rules/commit/411920e78f895dd74e123db7a0b66c4966134f16))
+- 同步模块化重构后的结构说明 ([22ea62b](https://github.com/powerfullz/override-rules/commit/22ea62bc805dc4341eb7f7e0daee47c52f9153a3))
+
+
+### Refactoring
+
+- 重构 src 为分层模块化结构并统一命名为 Clash ([ca26023](https://github.com/powerfullz/override-rules/commit/ca260233409049d48e9b12ffa8b729f3ab905cca))
+
+
+### Testing
+
+- 添加核心逻辑单元测试 ([9902b55](https://github.com/powerfullz/override-rules/commit/9902b55a85edc20a59e15b41bf4cdaf83836b156))
 ## [2.7.6](https://github.com/powerfullz/override-rules/compare/src-v2.7.5...src-v2.7.6) (2026-09-16)
 
 
