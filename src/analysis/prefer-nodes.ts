@@ -12,6 +12,8 @@ import type { ProxyNode } from "../types/proxy";
  *
  * 对用户输入的正则同时做编译与匹配异常捕获：非法正则或灾难性回溯只会退化
  * 为「不启用优先选择」，不会让整个覆写脚本失败。
+ *
+ * 调用方传入的节点列表应已排除 Tailscale 节点，以保持上游「Tailscale 不进入常规候选」的约束。
  * @param nodes - 上游订阅的节点列表
  * @param patterns - 优先节点正则/名称列表；为 `null` 或空时返回空数组
  */

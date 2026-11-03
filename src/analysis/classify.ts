@@ -124,6 +124,6 @@ export function analyzeNodes(
         lowCostNodes,
         tailscaleNodes,
         hasTailscale: tailscaleNodes.length > 0,
-        preferNodes: collectPreferNodes(nodes, preferPatterns),
+        preferNodes: collectPreferNodes(excludeTailscale(nodes), preferPatterns),
     };
 }

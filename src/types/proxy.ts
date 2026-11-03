@@ -121,7 +121,11 @@ export interface BuildBaseListsInput {
     tailscaleNodes: ProxyNode[];
     regexFilter: boolean;
     regions: RegionLayout;
-    /** 优先选路节点名称（本 Fork 新增），非空时置于「选择代理」候选首位。 */
+    /**
+     * 优先选路节点名称（本 Fork 新增），非空时置于「选择代理」候选首位。
+     *
+     * 设计为可选字段，是为了避开修改上游 `tests/` 中的字面量入参；`main.ts` 会始终传入。
+     */
     preferNodes?: string[];
 }
 

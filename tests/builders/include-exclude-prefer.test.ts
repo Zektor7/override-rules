@@ -82,6 +82,14 @@ describe("include / exclude 参数", () => {
         assert.ok(!select?.proxies?.includes(PROXY_GROUPS.NETFLIX));
     });
 
+    it("include 解析为空集时退化为不过滤", () => {
+        const result = run({ include: ", ," }, CONFIG);
+
+        assert.ok(result.rules?.some((rule) => rule.startsWith("GEOSITE,netflix")));
+        assert.ok(providerNames(result).includes("PT"));
+        assert.ok(group(result, PROXY_GROUPS.NETFLIX));
+    });
+
     it("PT站点组默认 DIRECT 优先，Final 组以 DIRECT 为首选", () => {
         const result = run({}, CONFIG);
 
@@ -108,6 +116,22 @@ describe("prefer 参数", () => {
 
         assert.equal(group(result, PROXY_GROUPS.PREFER), undefined);
         assert.notEqual(group(result, PROXY_GROUPS.SELECT)?.proxies?.[0], PROXY_GROUPS.PREFER);
+    });
+
+    it("不命中 Tailscale 节点", () => {
+        const result = run(
+            { prefer: "Tailscale" },
+            {
+                proxies: [
+                    { name: "香港01" },
+                    { name: "香港02" },
+                    { name: "美国01" },
+                    { name: "Tailscale出口", type: "tailscale" },
+                ],
+            }
+        );
+
+        assert.equal(group(result, PROXY_GROUPS.PREFER), undefined);
     });
 
     it("未传 prefer 时保持原有候选顺序", () => {

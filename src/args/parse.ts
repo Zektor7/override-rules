@@ -43,7 +43,12 @@ function parseRuleFilters(args: ScriptArgs): {
         );
 
     if (args.include) {
-        return { includedRules: toSet(args.include), excludedRules: new Set() };
+        const includedRules = toSet(args.include);
+        // 全是空白/逗号时归为「未启用」，避免意外输出几乎没有分流的配置
+        return {
+            includedRules: includedRules.size > 0 ? includedRules : null,
+            excludedRules: new Set(),
+        };
     }
 
     return { includedRules: null, excludedRules: toSet(args.exclude || "") };

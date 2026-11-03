@@ -16,6 +16,7 @@ const BUILT_IN_POLICIES = new Set(["DIRECT", "REJECT", "REJECT-DROP"]);
  * 始终保留的基础设施代理组。
  *
  * 这些组是选路系统正常运作的基石，不与某条具体服务规则一一绑定。
+ * 其中 `GLOBAL` 由 `builders/config.ts` 在裁剪之后追加，列入此处仅作保险。
  */
 const INFRASTRUCTURE_GROUPS: Set<string> = new Set([
     PROXY_GROUPS.SELECT,
