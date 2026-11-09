@@ -383,8 +383,64 @@ describe("assembleConfig", () => {
 
     it("引用同一份规则集与 Geo 数据源", () => {
         const result = run({}, CONFIG);
-        assert.equal(result["rule-providers"], ruleSets);
+        const providers = result["rule-providers"] ?? {};
+        assert.equal(providers.SogouInput, ruleSets.SogouInput);
+        assert.equal(providers.Weibo, ruleSets.Weibo);
         assert.equal(result["geodata-mode"], true);
         assert.ok(result["geox-url"]?.geoip);
+    });
+
+    it("adblock=0 时广告拦截组隐藏", () => {
+        const result = run({ adblock: "0" }, CONFIG);
+        assert.equal(group(result, PROXY_GROUPS.AD_BLOCK)?.hidden, true);
+    });
+
+    it("adblock>0 时广告拦截组可见", () => {
+        const result = run({ adblock: "2" }, CONFIG);
+        assert.equal(group(result, PROXY_GROUPS.AD_BLOCK)?.hidden, undefined);
+    });
+
+    it("adblock=0 时 rule-providers 不包含广告规则集", () => {
+        const result = run({ adblock: "0" }, CONFIG);
+        const providers = result["rule-providers"] ?? {};
+        assert.ok(!("ADBlock" in providers));
+        assert.ok(!("AdditionalFilter" in providers));
+    });
+
+    it("adblock=1 时 ADBlock 指向 adrules.top", () => {
+        const result = run({ adblock: "1" }, CONFIG);
+        const providers = result["rule-providers"] ?? {};
+        assert.equal(providers.ADBlock?.url, "https://adrules.top/adrules-mihomo.mrs");
+        assert.equal(providers.ADBlock?.format, "mrs");
+        assert.ok("AdditionalFilter" in providers);
+    });
+
+    it("adblock=2 时 ADBlock 使用默认的 217heidai 规则集", () => {
+        const result = run({ adblock: "2" }, CONFIG);
+        const providers = result["rule-providers"] ?? {};
+        assert.equal(providers.ADBlock, ruleSets.ADBlock);
+        assert.ok("AdditionalFilter" in providers);
+    });
+
+    it("adblock=3 时 ADBlock 指向 AWAvenue", () => {
+        const result = run({ adblock: "3" }, CONFIG);
+        const providers = result["rule-providers"] ?? {};
+        assert.match(providers.ADBlock?.url ?? "", /AWAvenue-Ads-Rule/);
+        assert.equal(providers.ADBlock?.format, "mrs");
+        assert.ok("AdditionalFilter" in providers);
+    });
+
+    it("非 regex 模式下 Weibo 组不使用 include-all", () => {
+        const result = run({}, CONFIG);
+        const weibo = group(result, PROXY_GROUPS.WEIBO);
+        assert.equal(weibo?.["include-all"], undefined);
+        assert.ok(weibo?.proxies !== undefined);
+        assert.ok((weibo?.proxies?.length ?? 0) > 0);
+    });
+
+    it("regex 模式下 Weibo 组使用 include-all", () => {
+        const result = run({ regex: "true" }, CONFIG);
+        const weibo = group(result, PROXY_GROUPS.WEIBO);
+        assert.equal(weibo?.["include-all"], true);
     });
 });

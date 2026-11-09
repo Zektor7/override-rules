@@ -17,6 +17,7 @@ https://github.com/powerfullz/override-rules
 - include: 只使用指定的规则，多个用逗号分隔。示例：#include=ADBlock,Netflix,YouTube（与 exclude 冲突时优先）
 - exclude: 排除指定的规则，多个用逗号分隔。示例：#exclude=EHentai,Weibo
 - prefer: 优先选择节点（正则模式，单个或多个用逗号分隔）。匹配到的节点将组成 fallback 优先选路组，不可用时自动回退到自动选择组。示例：#prefer=香港.*01,台湾.*02
+- adblock: 去广告规则（0=关闭，1=adrules.top，2=217heidai，3=AWAvenue，默认 3）
 
 源码位于 `src/`，入口为 `src/main.ts`。
 */

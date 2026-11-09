@@ -1,5 +1,65 @@
 # Changelog
 
+## [2.10.1](https://github.com/powerfullz/override-rules/compare/src-v2.10.0...src-v2.10.1) (2026-11-08)
+
+
+### Bug Fixes
+
+- Adjust default adblock source ([670a0fe](https://github.com/powerfullz/override-rules/commit/670a0fe563b4932e712e7a297d83fb4c7c6eb222))
+
+
+### Documentation
+
+- Document code quality tooling in AGENTS.md ([74b198f](https://github.com/powerfullz/override-rules/commit/74b198f6a73e51efa3fb44323a74522153210348))
+- Update docs ([96f25ee](https://github.com/powerfullz/override-rules/commit/96f25eee62151540fc81886e0d84cd2e79074290))
+- Rewrite `AGENTS.md` ([31c0dc3](https://github.com/powerfullz/override-rules/commit/31c0dc3c7871881c281025d070ff7752eab68e40))
+
+
+### Features
+
+- Add code quality analysis toolchain ([5f346e5](https://github.com/powerfullz/override-rules/commit/5f346e5f3e22d6ccf2f95a420fe26ec7370f379b))
+
+
+### Refactoring
+
+- Fix issues surfaced by static analysis ([9b5aa25](https://github.com/powerfullz/override-rules/commit/9b5aa25a6048e86383fd9c41bf75ea66b85f64da))
+
+
+### Testing
+
+- Pin explicit adblock=0 in config tests ([d6821a1](https://github.com/powerfullz/override-rules/commit/d6821a14cc556a7fc19aca5c08d336c67f6dcb18))
+## [2.10.0](https://github.com/powerfullz/override-rules/compare/src-v2.9.3...src-v2.10.0) (2026-11-05)
+
+
+### Bug Fixes
+
+- 删除 GoogleFCM 相关规则 ([757d8af](https://github.com/powerfullz/override-rules/commit/757d8af57a7e810ff32391e295fd3cea0d7ca023))
+- Adblock=0 时隐藏广告拦截组 ([f24f27f](https://github.com/powerfullz/override-rules/commit/f24f27f20f402f0ab88faf02612572381263537a))
+- 修改`force-dns-mapping`为 `false` ([45e3e77](https://github.com/powerfullz/override-rules/commit/45e3e77e6e9a03a7198f6e7d749ce9c54b989d7d))
+
+
+### Features
+
+- 新增 `adblock` 参数并修复非 regex 模式下服务组 include-all 问题 ([e12b452](https://github.com/powerfullz/override-rules/commit/e12b4526baacea44edb1f69b0c8a36a185ee6ab6))
+
+
+### Refactoring
+
+- 将所有参数默认值显式集中到 schema.ts ([78f7b95](https://github.com/powerfullz/override-rules/commit/78f7b95edcc655ddecf36fa61ef05fee8d848fa5))
+- 将 adblock 选项目命名为 adblockSource ([ee2d1f8](https://github.com/powerfullz/override-rules/commit/ee2d1f8a9475ac79c9f305e83b249fb5d2dc16a7))
+- 统一使用 ADBlock 规则集名称，按 adblock 级别替换下载源 ([e796fec](https://github.com/powerfullz/override-rules/commit/e796fecb12f7cde7dd1cfeb1fd6f644610889b6f))
+- 简化 adblock 规则组装逻辑 ([34171bd](https://github.com/powerfullz/override-rules/commit/34171bd98757f3e4b546026c0c0f605d3fa54d4b))
+## [2.9.3](https://github.com/powerfullz/override-rules/compare/src-v2.9.2...src-v2.9.3) (2026-11-05)
+
+
+### Bug Fixes
+
+- 继承上游 dns.listen 以保留本地 DNS 监听 ([b9ad42b](https://github.com/powerfullz/override-rules/commit/b9ad42b1d2e47bb379823b7ac7db30644a245c82))
+
+
+### Features
+
+- 将 mtu 默认改为 9000 ([a21d26c](https://github.com/powerfullz/override-rules/commit/a21d26cb6a8f069648335d629f9e05baea12732c))
 ## [2.9.2](https://github.com/powerfullz/override-rules/compare/src-v2.9.1...src-v2.9.2) (2026-11-03)
 
 
