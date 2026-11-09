@@ -51,7 +51,7 @@ function parseRuleFilters(args: ScriptArgs): {
         };
     }
 
-    return { includedRules: null, excludedRules: toSet(args.exclude || "") };
+    return { includedRules: null, excludedRules: toSet(args.exclude ?? "") };
 }
 
 /**
