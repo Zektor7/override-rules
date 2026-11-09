@@ -4,7 +4,7 @@
 
 import { PROXY_GROUPS } from "../catalog/group-names";
 import { ICONS } from "../catalog/icons";
-import { ruleSets } from "../catalog/rule-sets";
+import { adblockAlternatives, ruleSets } from "../catalog/rule-sets";
 import { buildDns } from "./dns";
 import { buildFullConfig } from "./full-config";
 import { geoxUrl } from "./geox";
@@ -55,7 +55,19 @@ export function assembleConfig(
         hasTailscale: nodes.hasTailscale,
         includedRules: flags.includedRules,
         excludedRules: flags.excludedRules,
+        adblockSource: flags.adblockSource,
     });
+
+    // 上游新增：按 adblock 级别选择去广告规则集来源（0=关闭）。
+    const { ADBlock, AdditionalFilter, ...baseRuleSets } = ruleSets;
+    type AdblockProvider =
+        typeof ADBlock | (typeof adblockAlternatives)[keyof typeof adblockAlternatives];
+    let adblockProvider: AdblockProvider | undefined;
+    if (flags.adblockSource === 2) {
+        adblockProvider = ADBlock;
+    } else if (flags.adblockSource !== 0) {
+        adblockProvider = adblockAlternatives[flags.adblockSource];
+    }
 
     // 本 Fork 新增：启用 include/exclude 时，由剩余规则反推未被使用的代理组与规则集并一并剔除。
     const isRuleFiltering = flags.includedRules !== null || flags.excludedRules.size > 0;
@@ -65,7 +77,14 @@ export function assembleConfig(
               allProxyNames: new Set(nodes.allNodes.map((node) => node.name)),
           })
         : proxyGroups;
-    const finalRuleSets = isRuleFiltering ? filterRuleSetsByRules(ruleSets, rules) : ruleSets;
+    // 上游 adblock 替换源先应用到规则集，再交由 Fork 的过滤逻辑裁剪未使用项。
+    const providerRuleSets = {
+        ...baseRuleSets,
+        ...(adblockProvider && { ADBlock: adblockProvider, AdditionalFilter }),
+    };
+    const finalRuleSets = isRuleFiltering
+        ? filterRuleSetsByRules(providerRuleSets, rules)
+        : providerRuleSets;
 
     return {
         proxies: config.proxies,

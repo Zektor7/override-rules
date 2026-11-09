@@ -1,5 +1,5 @@
 /**
- * 路由规则构建。
+ * 分流规则
  *
  * 规则中引用的规则集名称通过 `ruleSet()` 生成，受 `RuleSetKey` 类型约束，
  * 不会出现引用未注册规则集的静默错误。
@@ -9,6 +9,8 @@ import { PROXY_GROUPS } from "../catalog/group-names";
 import { ruleSet } from "../catalog/rule-sets";
 import { shouldKeepRule } from "./rule-filter";
 import { isNotNull } from "../utils/primitives";
+import { ARG_DEFAULTS } from "../args/schema";
+import type { AdblockSource } from "../types/args";
 
 export interface BuildRulesInput {
     quicEnabled: boolean;
@@ -17,6 +19,7 @@ export interface BuildRulesInput {
     includedRules?: Set<string> | null;
     /** 需要排除的规则标识（本 Fork 新增）。 */
     excludedRules?: Set<string>;
+    adblockSource?: AdblockSource;
 }
 
 /**
@@ -25,18 +28,20 @@ export interface BuildRulesInput {
  * @param input.hasTailscale - 是否存在 Tailscale 节点（决定是否生成 Tailscale 分流规则）
  * @param input.includedRules - 详见 `BuildRulesInput`，本 Fork 的 `include` 参数
  * @param input.excludedRules - 详见 `BuildRulesInput`，本 Fork 的 `exclude` 参数
+ * @param input.adblockSource - 去广告规则来源（0=关闭，1=adrules.top，2=217heidai，3=AWAvenue）
  */
 export function buildRules({
     quicEnabled,
     hasTailscale,
     includedRules = null,
     excludedRules = new Set<string>(),
+    adblockSource = ARG_DEFAULTS.adblockSource,
 }: BuildRulesInput): string[] {
     // 基础与分流规则：受 include/exclude 参数裁剪
     const serviceRules = [
         `GEOIP,private,DIRECT,no-resolve`,
-        ruleSet("ADBlock", PROXY_GROUPS.AD_BLOCK),
-        ruleSet("AdditionalFilter", PROXY_GROUPS.AD_BLOCK),
+        adblockSource > 0 ? ruleSet("ADBlock", PROXY_GROUPS.AD_BLOCK) : null,
+        adblockSource > 0 ? ruleSet("AdditionalFilter", PROXY_GROUPS.AD_BLOCK) : null,
         ruleSet("SogouInput", PROXY_GROUPS.SOGOU_INPUT),
         `DOMAIN-SUFFIX,truthsocial.com,${PROXY_GROUPS.TRUTH_SOCIAL}`,
         ruleSet("StaticResources", PROXY_GROUPS.STATIC_RESOURCES),
@@ -63,7 +68,6 @@ export function buildRules({
         ruleSet("EHentai", PROXY_GROUPS.EHENTAI),
         ruleSet("TikTok", PROXY_GROUPS.TIKTOK),
         ruleSet("SteamFix", "DIRECT"),
-        ruleSet("GoogleFCM", "DIRECT"),
         `GEOSITE,google-play@cn,DIRECT`,
         `GEOSITE,microsoft@cn,DIRECT`,
         `GEOSITE,apple,${PROXY_GROUPS.APPLE}`,
@@ -72,7 +76,7 @@ export function buildRules({
         ruleSet("GFWList", PROXY_GROUPS.SELECT),
         `GEOIP,cn,DIRECT`,
         `MATCH,${PROXY_GROUPS.FINAL}`,
-    ].filter((rule) => shouldKeepRule(rule, includedRules, excludedRules));
+    ].filter((rule) => rule !== null && shouldKeepRule(rule, includedRules, excludedRules));
 
     // 拦截与定向分流规则不参与裁剪，始终置于列表前部
     return [

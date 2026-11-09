@@ -4,12 +4,12 @@
 
 import { parseBool, parseNumber } from "../utils/primitives";
 import { ARG_DEFAULTS } from "./schema";
-import type { FeatureFlags, GroupType, ScriptArgs } from "../types/args";
+import type { AdblockSource, FeatureFlags, GroupType, ScriptArgs } from "../types/args";
 
 /**
  * 解析 `grouptype` 参数，并向后兼容旧的 `loadbalance` 参数。
  * - `grouptype`：0=select，1=url-test，2=load-balance，优先级最高；
- * - 仅当 `grouptype` 未指定（或非法）时，才回退到旧参数 `loadbalance`：true→2，false→1；
+ * - 仅当 `grouptype` 未指定（或非法）时，才回退到旧参数 `loadback`：true→2，false→1；
  * - 两者都不可用时回退为默认值。
  */
 function parseGroupType(args: ScriptArgs): GroupType {
@@ -51,7 +51,7 @@ function parseRuleFilters(args: ScriptArgs): {
         };
     }
 
-    return { includedRules: null, excludedRules: toSet(args.exclude || "") };
+    return { includedRules: null, excludedRules: toSet(args.exclude ?? "") };
 }
 
 /**
@@ -68,6 +68,19 @@ function parsePreferPatterns(args: ScriptArgs): string[] | null {
 }
 
 /**
+ * 解析 `adblock` 参数。
+ * - `0`：关闭去广告规则（默认）
+ * - `1`：adrules.top
+ * - `2`：217heidai
+ * - `3`：AWAvenue
+ * - 非法值回退为默认值。
+ */
+function parseAdblockSource(args: ScriptArgs): AdblockSource {
+    const raw = parseNumber(args.adblock, ARG_DEFAULTS.adblockSource);
+    return raw === 0 || raw === 1 || raw === 2 || raw === 3 ? raw : ARG_DEFAULTS.adblockSource;
+}
+
+/**
  * 解析传入的脚本参数，并转换为内部使用的功能开关。
  * @param args - 从脚本环境（如 Substore）传入的原始参数对象
  */
@@ -76,16 +89,17 @@ export function buildFeatureFlags(args: ScriptArgs): FeatureFlags {
 
     return {
         groupType: parseGroupType(args),
-        ipv6Enabled: parseBool(args.ipv6),
-        fullConfig: parseBool(args.full),
-        keepAliveEnabled: parseBool(args.keepalive),
+        ipv6Enabled: parseBool(args.ipv6, ARG_DEFAULTS.ipv6Enabled),
+        fullConfig: parseBool(args.full, ARG_DEFAULTS.fullConfig),
+        keepAliveEnabled: parseBool(args.keepalive, ARG_DEFAULTS.keepAliveEnabled),
         fakeIPEnabled: parseBool(args.fakeip, ARG_DEFAULTS.fakeIPEnabled),
-        quicEnabled: parseBool(args.quic),
-        regexFilter: parseBool(args.regex),
-        tunEnabled: parseBool(args.tun),
+        quicEnabled: parseBool(args.quic, ARG_DEFAULTS.quicEnabled),
+        regexFilter: parseBool(args.regex, ARG_DEFAULTS.regexFilter),
+        tunEnabled: parseBool(args.tun, ARG_DEFAULTS.tunEnabled),
         countryThreshold: parseNumber(args.threshold, ARG_DEFAULTS.countryThreshold),
         includedRules,
         excludedRules,
         preferPatterns: parsePreferPatterns(args),
+        adblockSource: parseAdblockSource(args),
     };
 }

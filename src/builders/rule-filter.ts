@@ -36,16 +36,16 @@ const INFRASTRUCTURE_GROUPS: Set<string> = new Set([
 function extractRuleIdentifiers(rule: string): string[] {
     const identifiers: string[] = [];
 
-    const ruleSetMatch = rule.match(/RULE-SET,(\w+)/);
+    const ruleSetMatch = /RULE-SET,(\w+)/.exec(rule);
     if (ruleSetMatch) identifiers.push(ruleSetMatch[1]);
 
-    const geositeMatch = rule.match(/GEOSITE,([\w\-@!]+)/);
+    const geositeMatch = /GEOSITE,([\w\-@!]+)/.exec(rule);
     if (geositeMatch) identifiers.push(geositeMatch[1]);
 
-    const geoipMatch = rule.match(/GEOIP,(\w+)/);
+    const geoipMatch = /GEOIP,(\w+)/.exec(rule);
     if (geoipMatch) identifiers.push(geoipMatch[1]);
 
-    const domainMatch = rule.match(/DOMAIN-SUFFIX,([\w.]+)/);
+    const domainMatch = /DOMAIN-SUFFIX,([\w.]+)/.exec(rule);
     if (domainMatch) identifiers.push(domainMatch[1]);
 
     return identifiers;
