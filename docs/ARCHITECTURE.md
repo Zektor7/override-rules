@@ -94,6 +94,10 @@ flowchart TD
 | `src/utils/primitives.ts` | 通用工具函数 | `buildList()`, `parseBool()`, `parseNumber()`, `isNotNull()` |
 | `src/utils/regex.ts` | 正则匹配工具 | `createCaseInsensitiveNodeMatcher()` |
 | `scripts/yaml_generator/generator.ts` | 静态 YAML 覆写文件生成器 | 穷举参数组合，生成 `yamls/` 目录下的 192 个 YAML 配置文件；支持 `LIMIT_COMBOS` 限制生成数量 |
+| `src/catalog/honk-groups.ts` | honk 输出专用的组名/策略/地区映射 | `HONK_GROUP_NAMES`, `HONK_POLICIES`, `toHonkName()`, `requireHonkName()`, `honkCountryName()` |
+| `src/types/honk.ts` | honk 构建层需要的类型 | `HonkBuildContext`, `InlineRuleSetMap`, `HonkGroupSpec` |
+| `src/builders/honk/` | honk `config.dae` 文本构建层 | `filter.ts` 生成 filter 表达式；`groups/rules/dns/assets/global/experimental.ts` 分段渲染；`render.ts` 拼装 banner + 各段 + 丢弃字段尾注 |
+| `scripts/honk_generator/generator.ts` | honk 静态 `.dae` 生成器 | 直接引用 `src/` 构建产物，不依赖 `convert.js`；穷举 `grouptype × adblock × ipv6 × quic` 共 24 个 `.dae`；支持 `LIMIT_COMBOS`、`PREFER_REGEX` |
 | `tests/` | 轻量单元测试（`node --import tsx --test`） | 覆盖参数解析、节点分类、代理组构造、规则/DNS/TUN、最终组装 |
 
 ---
@@ -238,3 +242,65 @@ YAML 模式的特点：
 - 不依赖脚本运行时，兼容性最广
 
 两种模式共享同一套 `src/catalog/` 与 `src/builders/` 逻辑，区别仅在于运行时的数据来源和过滤方式。
+
+### honk 静态配置（honks/*.dae）
+
+**面向 [daeuniverse/honk](https://github.com/daeuniverse/honk) 客户端的产物**（honk 是 dae 的 Rust + eBPF 重写，配置语法沿用 dae，文件后缀 `.dae`）。honk 不能执行 JS，因此本项目为它额外提供一份静态生成器 `scripts/honk_generator/generator.ts`，产物落在 `honks/`，与 `yamls/` 一样不进入 `main` 分支。
+
+与 Clash 分支共享的参数解析与节点分类（`buildFeatureFlags` + `analyzeNodes`）、国家/服务/规则集目录（`catalog/countries` / `catalog/service-groups` / `catalog/rule-sets` / `catalog/low-cost`），只在构建层分叉到 `builders/honk/`；与 `yamls/` 生成器的关键差异是 **直接 `import` 源码，不依赖 `convert.js`**，因此修改 `src/` 后只需 `npm run generate:honk` 即可看到效果，无需先 `npm run build`。
+
+#### 参数矩阵
+
+静态 `.dae` 只穷举对 honk 有意义的参数，共 `3 × 2 × 2 × 2 = 24` 个文件：
+
+| 参数 | 可选值 | 数量 | 说明 |
+|------|--------|------|------|
+| `grouptype` | 0 / 1 / 2 | 3 | 映射到 honk policy：`select` / `min_moving_avg` / `loadbalance` |
+| `adblock` | 0 / 1 | 2 | 1 时启用 `geosite: category-ads-all` 近似；三个远程源在 honk 侧无等价物 |
+| `ipv6` | 0 / 1 | 2 | 0 时在 `dns.routing.request` 里加 `qtype(aaaa) -> reject` |
+| `quic` | 0 / 1 | 2 | 0 时插入 `l4proto(udp) && dport(443) -> block` |
+
+文件命名：`config_gt-{0\|1\|2}_adblock-{0\|1}_ipv6-{0\|1}_quic-{0\|1}.dae`。
+
+环境变量：
+
+- `LIMIT_COMBOS=<N>`：仅生成前 N 个组合，本地调试用；
+- `PREFER_REGEX=<csv>`：设置后所有产物都追加 Fork 的 `Prefer` 组，值为逗号分隔的正则模式（例：`香港.*01,台湾.*02`）。
+
+#### Clash → honk 的语义映射
+
+| Clash 侧概念 | honk 输出侧的处理 |
+| --- | --- |
+| `proxy-groups` 候选列表（引用其他组） | honk 组只能靠 `filter: name(regex: '…')` 命中订阅节点；`Select` / `Auto` / `Fallback` / 服务组 都用 `!name(regex: '<utility 关键词>')` 覆盖全订阅，策略上区别仅在 `policy` |
+| `url-test` / `select` / `load-balance` | 分别对应 `min_moving_avg` / `select` / `loadbalance`；另有 `fallback`、`score`（Final 使用） |
+| 中文/含空格组名 | honk 只允许 `[A-Za-z0-9]`；`HONK_GROUP_NAMES` 一次性映射为 ASCII名（`AI`、`Crypto`、`TruthSocial` 等） |
+| `GEOSITE,<code>,<group>` | `domain(geosite: <code>) -> <HonkGroup>`，保留 `@cn` 与 `!cn` 修饰符 |
+| `GEOIP,cn,DIRECT` | `dip(geoip: cn) && !dport(53, 853) -> direct(must)`，避免误伤 DNS/DoT |
+| `RULE-SET,<key>` | 项目自维护的 `ruleset/*.list`（`TikTok` / `EHentai` / `Weibo` / `PT` / `SteamFix` / `AdditionalFilter` / `AdditionalCDNResources`）直接内联为 `domain(full\|suffix\|keyword: …)`；`ADBlock` 近似为 `geosite: category-ads-all`，`GFWList` 近似为 `geosite: geolocation-!cn`；其他外部 rule-provider（`SogouInput` / `StaticResources` / `CDNResources`）在产物里以注释提示 |
+| `AdBlock` / `SogouInput` 代理组 | 不建组，路由层直接落到 `block` / `direct`，与 kenzok8 / qichiyuhub 模板一致 |
+| `MATCH,<group>` | `fallback: <HonkGroup>` |
+| QUIC 拦截 | `l4proto(udp) && dport(443) -> block` |
+| `prefer`（Fork） | 命中时生成 `Prefer` 组：`policy: fallback`，`final: Auto` |
+| `include` / `exclude`（Fork） | 静态产物默认不枚举这两个参数（会爆炸式增加组合）；如需可手工编辑 `routing {}` 段落 |
+
+#### 被丢弃的字段
+
+honk 本身不包含下列概念，相关参数在 `.dae` 产物里不产生任何输出：
+
+- `landing` 与 `dialer-proxy` 链式代理（honk 无 dialer-proxy）；
+- `Tailscale` 节点与 `100.64.0.0/10` 定向分流（honk 无 tailscale outbound）；
+- `fake-ip` 引擎（honk 仓库 README 明确“no FakeIP engine”）、`sniffer`、`tcp-keep-alive`；
+- `tun` 段（honk 是 eBPF 透明代理，开启 `nfqueue_enable` 与 `auto_config_kernel_parameter` 即可）；
+- `manual`（手动选择）：`Select` 组已承担同类作用；
+- `GLOBAL` 汇总组：`Final` 负责兜底。
+
+产物尾部会重复写一份上述丢弃项的注释，方便排查。
+
+#### 与 `yamls/` 的差异
+
+| 方面 | `yamls/` | `honks/` |
+| --- | --- | --- |
+| 客户端 | Clash/Mihomo 系，不支持 JS 的客户端 | honk（Linux eBPF 网关，OpenWrt / 软路由为主） |
+| 入口依赖 | 需要先 `npm run build` 产出 `convert.js`，再由 `vm.runInContext` 执行 | 直接 `import` `src/` 里的 `buildFeatureFlags` / `analyzeNodes` / `buildHonkDae` |
+| 参数矩阵 | 2⁶ × 3 × 4 = 192 个 | 24 个（丢弃在 honk 侧无意义的参数） |
+| 节点来源 | 产物中不包含 `proxies`，客户端自己注入 | 产物中 `subscription {}` 为占位 URL，用户替换为自己的订阅链接（honk 原生识别 Clash YAML） |

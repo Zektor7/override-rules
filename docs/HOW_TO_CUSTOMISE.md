@@ -158,6 +158,35 @@ export const PROJECT_URL = `${CDN_URL}/gh/Zektor7/override-rules@main`;
 // 如果没有在 group-names 中添加新代理组，也可以直接用现有的 PROXY_GROUPS.SELECT 等
 ```
 
+## 自定义 honk 输出
+
+`src/builders/honk/` 与 `scripts/honk_generator/generator.ts` 产出 honk（dae 语法）专用的 `config.dae`，与 Clash 分支共享 `src/catalog/countries.ts` / `src/catalog/service-groups.ts` / `src/catalog/rule-sets.ts`，但 honk 自己的映射层放在 `src/catalog/honk-groups.ts`，**新增一个组或地区时，除了改上游的 catalog，还要同步补 honk 侧映射**，否则 `npm run generate:honk` 会拿到 `Region` 占位组名。
+
+### 新增代理组时
+
+在 `src/catalog/group-names.ts` 与 `src/catalog/service-groups.ts` 完成 Clash 侧定义后（参见上面两节），到 `src/catalog/honk-groups.ts` 中为 `HONK_GROUP_NAMES` 补一条 `KEY: "HonkName"`（honk 只允许 `[A-Za-z0-9]`）；如果该组在 honk 里无对应概念（如新引入一种与链式代理相关的组），直接写 `null`，生成器会同时跳过对应的组与路由规则。
+
+`Record<keyof typeof PROXY_GROUPS, string | null>` 的类型保证你遗漏时会在 `npm run typecheck` 阶段直接报错，不会静默产出缺组的配置。
+
+### 新增地区时
+
+在 `src/catalog/countries.ts` 的 `countriesMeta` 新增一条后，到 `src/catalog/honk-groups.ts` 内部的 `HONK_COUNTRY_CODES` 补一个 ASCII 组名（推荐 ISO 3166 alpha-2）。`tests/catalog/honk-groups.test.ts` 会调用 `assertHonkCountryMappings()` 验证两边一致，忘记补时 `npm test` 会直接报错。
+
+### 新增项目自维护的 ruleset 时
+
+只要把新的 `<Key>.list` 放到 `ruleset/` 目录，同时在 `scripts/honk_generator/generator.ts` 顶部的 `OWNED_RULESETS` 数组里加上 `"<Key>"`，`npm run generate:honk` 就会自动把它内联展开为 honk `routing {}` 里的 `domain(full|suffix|keyword: …)` 行。外部 rule-provider 无法内联，只能在 `src/builders/honk/rules.ts` 里的 `EXTERNAL_RULESET_TO_GEOSITE` 或 `EXTERNAL_RULESETS_SKIPPED` 登记一下，否则会在产物里以「未识别的 RULE-SET」注释形式提示。
+
+### 本地验证
+
+```bash
+# 只生成 1 个组合确认内容
+LIMIT_COMBOS=1 npm run generate:honk
+# 预先把 Fork 的 prefer 参数烘焙进 24 个产物
+PREFER_REGEX='香港.*01,台湾.*02' npm run generate:honk
+```
+
+honk 侧无对应概念的字段（`landing` / `fakeip` / `tun` / `sniffer` / `keepalive` / `manual` / `GLOBAL`）不进入静态矩阵，修改它们不会影响 `honks/*.dae` 产物。honk 与 Clash 的完整语义映射表见 [`ARCHITECTURE.md`](ARCHITECTURE.md#clash--honk-的语义映射)。
+
 ## 构建并使用你的定制脚本
 
 在修改完成后，你可以先在本地运行构建命令来验证你的更改是否正确：

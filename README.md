@@ -237,6 +237,40 @@ https://git.l3zc.com/powerfullz/override-rules/raw/branch/dist/yamls/config_gt-0
 
 *注：CI 仅套用了一份虚拟的 `fake_proxies.json` 来模拟生成 YAML，因此它无法像 JS 动态脚本那样根据你的实际节点智能生成专属分组策略，只能保守地包含常用的国家/地区。为了最高效的分流体验，仍强烈推荐使用 JS 覆写。*
 
+### 关于 honk 客户端的 `.dae` 静态配置
+
+[honk](https://github.com/daeuniverse/honk) 是 dae 的 Rust + eBPF 重写（Linux 6.12+，常见于 OpenWrt / 软路由）。honk 不执行 JS，配置文件为 `config.dae`（dae 语法），与 Clash/Mihomo 的 YAML 存在语义鸿沟。本仓库额外提供一份静态生成器 `scripts/honk_generator/generator.ts`，产物落在 `honks/` 目录，与 `yamls/` 一样不提交到 `main`，由 CI 发布到 `dist` 分支。
+
+文件命名与参数矩阵（共 24 份）：
+
+```text
+config_gt-{0|1|2}_adblock-{0|1}_ipv6-{0|1}_quic-{0|1}.dae
+```
+
+获取方式与 YAML 相同，只需把路径里的 `yamls/xxx.yaml` 换成 `honks/xxx.dae`：
+
+```text
+https://cdn.jsdelivr.net/gh/powerfullz/override-rules/honks/config_gt-1_adblock-1_ipv6-0_quic-0.dae
+```
+
+使用方式：
+
+1. 下载对应的 `.dae` 文件；
+2. 把 `subscription {}` 里的 `my_sub: 'https://example.com/your-subscription'` 替换为你自己的订阅链接（honk 原生识别 Clash YAML / 分享链接列表 / sing-box JSON）；
+3. 按机器实际情况修改 `global {}` 里的 `lan_interface` / `data_dir`；
+4. `honk-core config validate --config config.dae` 校验后重启 honk。
+
+与 Clash 输出的差异（honk 本身无对应概念，相关参数在 `.dae` 产物里不产生任何输出）：
+
+- **链式代理**：honk 不支持 `dialer-proxy`，「落地节点」/「前置代理」不会生成；
+- **Tailscale**：honk 没有 tailscale outbound，相关节点与 `100.64.0.0/10` 定向分流不生成；
+- **FakeIP / TUN / Sniffer / keepalive**：honk 是 eBPF 透明代理，无对应字段；
+- **AdBlock / SogouInput**：外部 rule-provider 无等价物，路由层直接落到 `block` / `direct`；如需精确去广告列表请手工补充；
+- **`include` / `exclude`**：默认不枚举（会爆炸式增加组合）；如需可手工编辑 `routing {}` 段落；
+- **`prefer`**：静态产物默认不建 `Prefer` 组；本地构建时 `PREFER_REGEX='香港.*01,台湾.*02' npm run generate:honk` 可以预先把 Prefer 组写入 24 份文件。
+
+更多细节见 [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md#honk-静态配置honksdae)。
+
 ### 如何自定义与贡献
 
 **如果你想基于本项目深度定制自己专属的覆写规则：**
