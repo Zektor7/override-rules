@@ -1,0 +1,102 @@
+/*!
+powerfullz 的 Substore → honk 覆写脚本（config.dae 动态生成）
+https://github.com/powerfullz/override-rules
+
+用法：把 convert-honk.min.js 作为 Sub-Store 覆写绑定到目标订阅，客户端 GET 该订阅
+的 download URL 时，Sub-Store 会把 main(config) 返回的字符串原样作为响应体吐出，
+拿到就是一份可直接放进 /etc/honk/config.dae 的完整配置。
+
+与 mihomo 分支共享的参数（含义完全一致，此处只列名字，详义见 convert.min.js banner）：
+- grouptype: 地区代理组类型（0=select 手动, 1=min_moving_avg 自动测速, 2=loadbalance 负载均衡，默认 1）
+- threshold: 地区节点数量小于该值时不显示分组（默认 2；不足 2 个地区时自动展平）
+- ipv6: 启用 IPv6（false 时 dns.routing.request 加 `qtype(aaaa) -> reject`；默认 false）
+- quic: 允许 QUIC（false 时插入 `l4proto(udp) && dport(443) -> block`；默认 false）
+- adblock: 去广告（0=关闭，1/2/3=对应远程源；honk 侧统一近似为 `geosite: category-ads-all`，默认 3）
+- include: 只使用指定规则，逗号分隔（与 exclude 冲突时优先）
+- exclude: 排除指定规则，逗号分隔
+- prefer: 优先选路节点正则，逗号分隔；命中时生成 Prefer 组（policy=fallback, final=Auto）
+
+honk 独有参数：
+- subscription: honk 的订阅 URL（URL 编码），会写入 subscription { my_sub: '<URL>' }；honk 按 interval 自动重拉
+- subtag: 订阅 tag 名，默认 `my_sub`
+- sub-interval: 订阅刷新间隔，默认 `86400s`；honk 接受 `30m` / `1h` 等
+- sub-route: 拉订阅的出口（`direct` 或组名），默认 `direct`
+- sub-cache: 是否缓存订阅正文到本地状态库，默认 true
+- sub-ua: 拉订阅的 User-Agent，默认 `clash.meta/1.19.30`
+- lan-iface: honk global.lan_interface，默认 `br-lan`
+- wan-iface: honk global.wan_interface，默认 `auto`
+- dial-mode: honk global.dial_mode，默认 `domain`
+- data-dir: honk global.data_dir，默认 `/etc/honk`
+- log-level: honk global.log_level，默认 `info`
+- allow-insecure: honk global.allow_insecure，默认 false
+- store-subscribe: honk global.store_subscribe，默认 true
+- nfqueue: honk global.nfqueue_enable，默认 true
+- auto-kernel: honk global.auto_config_kernel_parameter，默认 true
+- dns-default: honk dns.upstream.default 的 URL，默认阿里 DoH
+- dns-remote: honk dns.upstream.remote 的 URL，默认 Cloudflare DoH
+- dns-remote-exit: remote 绑定的出口组名，默认 `Select`
+- dns-client-subnet: honk dns.client_subnet，默认 `auto`
+- native-api: 是否输出 experimental.native_api {}，默认 true
+- native-listen: native_api.listen，默认 `0.0.0.0:9527`
+- native-ui: native_api.ui，默认 `embedded`
+- clash-api: 是否输出 experimental.clash_api {}，默认 true
+- clash-controller: clash_api.external_controller，默认 `0.0.0.0:9090`
+- clash-ui: clash_api.external_ui，默认 `zashboard`
+- clash-secret: clash_api.secret，默认空（生产请设置）
+
+honk 无对应概念、显式忽略的 mihomo 参数：
+- landing / 前置代理链（dialer-proxy）
+- fakeip / sniffer / tun / keepalive / full / regex / manual / GLOBAL / tailscale
+
+源码位于 `src/`，入口为 `src/main-honk.ts`。
+*/
+
+import { buildFeatureFlags } from "./args/parse";
+import { buildHonkRuntimeOptions } from "./args/honk-parse";
+import { analyzeNodes } from "./analysis/classify";
+import { buildHonkDae } from "./builders/honk";
+import { INLINED_HONK_RULESETS } from "./generated/honk-rulesets";
+import type { ScriptArgs } from "./types/args";
+import type { ClashConfig } from "./types/clash";
+import type { HonkScriptArgs } from "./types/honk";
+
+type HonkEntryArgs = ScriptArgs & HonkScriptArgs;
+
+declare const $arguments: HonkEntryArgs;
+
+/** 读取脚本环境传入的参数；未检测到时返回空对象以使用默认值。 */
+function readRawArgs(): HonkEntryArgs {
+    try {
+        return $arguments;
+    } catch {
+        return {};
+    }
+}
+
+/**
+ * honk 覆写的可测试入口：与 bundle 入口 `main()` 同逻辑，只是把 `$arguments` 抽成参数。
+ * 单元测试直接调用它避免污染 `globalThis`；bundle 打包后 esbuild 会 tree-shake
+ * 掉 `export` 关键字，不影响产物。
+ */
+export function runHonkEntry(config: ClashConfig, rawArgs: HonkEntryArgs): string {
+    if (!config.proxies || !Array.isArray(config.proxies)) {
+        throw new Error("[powerfullz 的 honk 覆写] 错误：Clash 配置中缺少有效的 proxies 字段");
+    }
+
+    const flags = buildFeatureFlags(rawArgs);
+    const opts = buildHonkRuntimeOptions(rawArgs);
+    const nodes = analyzeNodes(config.proxies, flags.countryThreshold, flags.preferPatterns);
+
+    return buildHonkDae({ flags, opts, nodes }, INLINED_HONK_RULESETS);
+}
+
+/**
+ * Sub-Store 实际调用的入口：从 `$arguments` 拿参数，转给 `runHonkEntry`。
+ * 返回字符串：Sub-Store 会把字符串原样作为响应体输出，不再 stringify 成 YAML/JSON。
+ * @param config - 上游订阅配置（Sub-Store 解析后的 Clash 对象）
+ */
+function main(config: ClashConfig): string {
+    return runHonkEntry(config, readRawArgs());
+}
+
+(globalThis as Record<string, unknown>).main = main;

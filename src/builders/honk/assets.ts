@@ -1,25 +1,18 @@
 /**
  * 生成 honk `assets {}` 段落。
  *
- * honk 的 `assets.geodata` 直接指定 geosite/geoip 数据下载地址；沿用现有
- * `builders/geox.ts` 的 CDN URL，避免与 Clash 分支维护两份常量。
- *
- * `subscription.ua` 沿用 honk 生态通行写法 `clash.meta/1.19.30`——部分机场
- * 会按 UA 判定分发格式，用 mihomo UA 可拿到最完整的 Clash YAML 正文。
+ * - `assets.route: direct`：geodata / UI 等资源默认走 direct；
+ * - `assets.geodata`：沿用 `builders/geox.ts` 的 CDN URL，与 Clash 分支共享同一份常量；
+ * - 订阅相关的默认值（ua/interval/cache）在 `subscription {}` 段里显式给出，
+ *   避免两处默认漂移，因此 assets 里不再输出 `subscription {}` 子段。
  */
 
 import { geoxUrl } from "../geox";
 
-/** 渲染 `assets {}` 段（含首尾大括号）。 */
 export function buildHonkAssets(): string[] {
     return [
         "assets {",
         "    route: direct",
-        "    subscription {",
-        "        ua: 'clash.meta/1.19.30'",
-        "        interval: 86400s",
-        "        cache: true",
-        "    }",
         "    geodata {",
         `        geosite: '${geoxUrl.geosite}'`,
         `        geoip: '${geoxUrl.geoip}'`,

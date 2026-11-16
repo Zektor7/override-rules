@@ -46,6 +46,8 @@ jobs:
 
           cp convert.js publish/convert.js
           cp convert.min.js publish/convert.min.js
+          cp convert-honk.js publish/convert-honk.js
+          cp convert-honk.min.js publish/convert-honk.min.js
           cp -a yamls/. publish/yamls/
 
           RELEASED_AT="$(date -u +'%Y-%m-%dT%H:%M:%SZ')"

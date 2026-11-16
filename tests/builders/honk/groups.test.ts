@@ -3,6 +3,7 @@ import { describe, it } from "node:test";
 
 import { analyzeNodes } from "../../../src/analysis/classify";
 import { buildFeatureFlags } from "../../../src/args/parse";
+import { buildHonkRuntimeOptions } from "../../../src/args/honk-parse";
 import { buildHonkGroupSpecs, buildHonkGroups } from "../../../src/builders/honk/groups";
 import { PROXY_GROUPS } from "../../../src/catalog/group-names";
 import type { ProxyNode } from "../../../src/types/proxy";
@@ -23,8 +24,9 @@ const PROXIES: ProxyNode[] = [
 
 function build(args: Record<string, string> = {}) {
     const flags = buildFeatureFlags(args);
+    const opts = buildHonkRuntimeOptions(args);
     const nodes = analyzeNodes(PROXIES, flags.countryThreshold, flags.preferPatterns);
-    return { flags, nodes };
+    return { flags, opts, nodes };
 }
 
 describe("buildHonkGroupSpecs", () => {
@@ -106,8 +108,9 @@ describe("buildHonkGroupSpecs", () => {
             { name: "美国03" },
         ];
         const flags = buildFeatureFlags({});
+        const opts = buildHonkRuntimeOptions({});
         const nodes = analyzeNodes(singleRegion, flags.countryThreshold, flags.preferPatterns);
-        const flattened = buildHonkGroupSpecs({ flags, nodes }).map((s) => s.name);
+        const flattened = buildHonkGroupSpecs({ flags, opts, nodes }).map((s) => s.name);
         assert.ok(!flattened.includes("US"), "展平模式下不应生成地区组");
     });
 

@@ -3,6 +3,7 @@ import { describe, it } from "node:test";
 
 import { analyzeNodes } from "../../../src/analysis/classify";
 import { buildFeatureFlags } from "../../../src/args/parse";
+import { buildHonkRuntimeOptions } from "../../../src/args/honk-parse";
 import { buildHonkRoutingLines, translateRule } from "../../../src/builders/honk/rules";
 import { PROXY_GROUPS } from "../../../src/catalog/group-names";
 import type { InlineRuleSetMap } from "../../../src/types/honk";
@@ -19,8 +20,9 @@ const EMPTY_INLINE: InlineRuleSetMap = {};
 
 function run(args: Record<string, string> = {}, inline: InlineRuleSetMap = EMPTY_INLINE): string[] {
     const flags = buildFeatureFlags(args);
+    const opts = buildHonkRuntimeOptions(args);
     const nodes = analyzeNodes(PROXIES, flags.countryThreshold, flags.preferPatterns);
-    return buildHonkRoutingLines({ flags, nodes }, inline);
+    return buildHonkRoutingLines({ flags, opts, nodes }, inline);
 }
 
 describe("translateRule 单条翻译", () => {
@@ -195,8 +197,9 @@ describe("buildHonkRoutingLines 端到端", () => {
             { name: "Tailscale节点", type: "tailscale" },
         ];
         const flags = buildFeatureFlags({});
+        const opts = buildHonkRuntimeOptions({});
         const nodes = analyzeNodes(tailscaleProxies, flags.countryThreshold, flags.preferPatterns);
-        const lines = buildHonkRoutingLines({ flags, nodes }, EMPTY_INLINE);
+        const lines = buildHonkRoutingLines({ flags, opts, nodes }, EMPTY_INLINE);
         assert.ok(!lines.some((l) => l.includes("100.64.0.0")));
         assert.ok(!lines.some((l) => l.includes("ts.net")));
     });

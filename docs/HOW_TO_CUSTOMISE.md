@@ -160,7 +160,7 @@ export const PROJECT_URL = `${CDN_URL}/gh/Zektor7/override-rules@main`;
 
 ## 自定义 honk 输出
 
-`src/builders/honk/` 与 `scripts/honk_generator/generator.ts` 产出 honk（dae 语法）专用的 `config.dae`，与 Clash 分支共享 `src/catalog/countries.ts` / `src/catalog/service-groups.ts` / `src/catalog/rule-sets.ts`，但 honk 自己的映射层放在 `src/catalog/honk-groups.ts`，**新增一个组或地区时，除了改上游的 catalog，还要同步补 honk 侧映射**，否则 `npm run generate:honk` 会拿到 `Region` 占位组名。
+honk 入口 `src/main-honk.ts` 与构建层 `src/builders/honk/` 产出 honk（dae 语法）专用的 `config.dae`，与 mihomo 分支共享 `src/catalog/countries.ts` / `src/catalog/service-groups.ts` / `src/catalog/rule-sets.ts` / `src/args/parse.ts`；honk 自己的映射层在 `src/catalog/honk-groups.ts`，独有参数的默认值在 `src/args/honk-schema.ts`。新增一个组或地区时，除了改上游的 catalog，还要同步补 honk 侧映射，否则产物会拿到 `Region` 占位组名。
 
 ### 新增代理组时
 
@@ -172,20 +172,33 @@ export const PROJECT_URL = `${CDN_URL}/gh/Zektor7/override-rules@main`;
 
 在 `src/catalog/countries.ts` 的 `countriesMeta` 新增一条后，到 `src/catalog/honk-groups.ts` 内部的 `HONK_COUNTRY_CODES` 补一个 ASCII 组名（推荐 ISO 3166 alpha-2）。`tests/catalog/honk-groups.test.ts` 会调用 `assertHonkCountryMappings()` 验证两边一致，忘记补时 `npm test` 会直接报错。
 
+### 新增 honk 独有参数时
+
+1. 在 `src/types/honk.ts::HonkScriptArgs` 里声明 URL 参数字段（字符串形式）；
+2. 在 `src/types/honk.ts::HonkRuntimeOptions` 里声明解析后的强类型字段；
+3. 在 `src/args/honk-schema.ts::HONK_ARG_DEFAULTS` 里写默认值；
+4. 在 `src/args/honk-parse.ts::buildHonkRuntimeOptions()` 里接入（字符串/布尔/URL 编码分别用 `readString` / `readBool` / `readSubscriptionUrl`）；
+5. 在对应 `src/builders/honk/<段>.ts` 里从 `opts` 读取并写入输出；
+6. 补上 `tests/args/honk-parse.test.ts` 与相关 `tests/builders/honk/*.test.ts` 的断言。
+
 ### 新增项目自维护的 ruleset 时
 
-只要把新的 `<Key>.list` 放到 `ruleset/` 目录，同时在 `scripts/honk_generator/generator.ts` 顶部的 `OWNED_RULESETS` 数组里加上 `"<Key>"`，`npm run generate:honk` 就会自动把它内联展开为 honk `routing {}` 里的 `domain(full|suffix|keyword: …)` 行。外部 rule-provider 无法内联，只能在 `src/builders/honk/rules.ts` 里的 `EXTERNAL_RULESET_TO_GEOSITE` 或 `EXTERNAL_RULESETS_SKIPPED` 登记一下，否则会在产物里以「未识别的 RULE-SET」注释形式提示。
+只要把新的 `<Key>.list` 放到 `ruleset/` 目录，同时在 `scripts/generate-honk-rulesets.mjs` 顶部的 `OWNED_RULESETS` 数组里加上 `"<Key>"`，`npm run build`（或 `npm run generate:honk-rulesets`）就会重写 `src/generated/honk-rulesets.ts`；`main-honk.ts` 里的 `INLINED_HONK_RULESETS` 自动多一个键，honk `routing {}` 会把它展开为 `domain(full|suffix|keyword: …)` 行。外部 rule-provider 无法内联，只能在 `src/builders/honk/rules.ts` 里的 `EXTERNAL_RULESET_TO_GEOSITE` 或 `EXTERNAL_RULESETS_SKIPPED` 登记一下，否则会在产物里以「未识别的 RULE-SET」注释形式提示。`src/generated/honk-rulesets.ts` 已**提交到 git**（保证克隆后能直接 `npm test`），重生成后请记得一并提交。
 
 ### 本地验证
 
 ```bash
-# 只生成 1 个组合确认内容
-LIMIT_COMBOS=1 npm run generate:honk
-# 预先把 Fork 的 prefer 参数烘焙进 24 个产物
-PREFER_REGEX='香港.*01,台湾.*02' npm run generate:honk
+# 确认产物里包含期望的段与参数（用 Node 模拟 Sub-Store 跑一遍）
+npm run build && node -e "
+  const fs = require('node:fs'); const vm = require('node:vm');
+  const code = fs.readFileSync('convert-honk.js', 'utf8');
+  const sandbox = { console, \$arguments: { subscription: 'https://sub.example/token', grouptype: '1' } };
+  vm.createContext(sandbox); vm.runInContext(code, sandbox);
+  console.log(sandbox.main({ proxies: [{ name: '香港01' }, { name: '香港02' }, { name: '美国01' }] }));
+"
 ```
 
-honk 侧无对应概念的字段（`landing` / `fakeip` / `tun` / `sniffer` / `keepalive` / `manual` / `GLOBAL`）不进入静态矩阵，修改它们不会影响 `honks/*.dae` 产物。honk 与 Clash 的完整语义映射表见 [`ARCHITECTURE.md`](ARCHITECTURE.md#clash--honk-的语义映射)。
+honk 侧无对应概念的字段（`landing` / `fakeip` / `tun` / `sniffer` / `keepalive` / `manual` / `GLOBAL`）不产生输出，修改它们不会影响 `config.dae` 产物。honk 与 Clash 的完整语义映射表见 [`ARCHITECTURE.md`](ARCHITECTURE.md#clash--honk-的语义映射)。
 
 ## 构建并使用你的定制脚本
 

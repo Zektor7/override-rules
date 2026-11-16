@@ -1,8 +1,9 @@
 # 自动生成的文件
 yamls/
-honks/
 convert.js
 convert.min.js
+convert-honk.js
+convert-honk.min.js
 
 # 依赖
 node_modules/
