@@ -179,11 +179,19 @@ honk 入口 `src/main-honk.ts` 与构建层 `src/builders/honk/` 产出 honk（d
 1. 在 `src/types/honk.ts::HonkScriptArgs` 里声明 URL 参数字段（字符串形式）；
 2. 在 `src/types/honk.ts::HonkRuntimeOptions` 里声明解析后的强类型字段；
 3. 在 `src/args/honk-schema.ts::HONK_ARG_DEFAULTS` 里写默认值；
-4. 在 `src/args/honk-parse.ts::buildHonkRuntimeOptions()` 里接入（字符串/布尔/URL 编码分别用 `readString` / `readBool` / `readSubscriptionUrl`）；
+4. 在 `src/args/honk-parse.ts::buildHonkRuntimeOptions(args, flags)` 里接入（字符串/布尔/正整数分别用 `readString` / `readBool` / `readPositiveInt`；policy 需要白名单时使用 `catalog/honk-groups.ts::isHonkPolicy`）；
 5. 在对应 `src/builders/honk/<段>.ts` 里从 `opts` 读取并写入输出；
 6. 补上 `tests/args/honk-parse.test.ts` 与相关 `tests/builders/honk/*.test.ts` 的断言。
 
-**仅当新字段属于“策略”时才加到本项目**：与上游订阅/域名分流/DNS 上游相关的才是策略（比如新增一个 `dns-local-exit`）；与网卡、面板口令、内核参数相关的属于部署层，写到 `system.dae` 里就行，不要往本项目里加。
+**仅当新字段属于“策略”时才加到本项目**：与上游订阅/域名分流/组策略/DNS 上游相关的才是策略（比如新增一个 `dns-local-exit`）；与网卡、面板口令、内核参数相关的属于部署层，写到 `system.dae` 里就行，不要往本项目里加。
+
+### 调整 honk 组的默认 policy 与调优字段
+
+`buildHonkGroupSpecs` 把 `Auto` / 地区组 / 服务组 / `LowCost` / `Final` 统一交给 `opts.policy`（默认 `score`）；`Select` 固定 `select`，`Fallback` 固定 `fallback`，`Prefer` 固定 `fallback` + `final: Auto`。改动时注意：
+
+- `HONK_POLICY_VALUES` 白名单与 honk 官方 [groups.md#策略](https://github.com/daeuniverse/honk/blob/main/doc/zh/reference/groups.md#%E7%AD%96%E7%95%A5) 保持同步；
+- `tolerance` / `idle-timeout` / `check-url` / `interrupt` 只在自动选类组上输出，`Select` / `Fallback` 不写（honk 会忽略并打 warning）；
+- icon 从 `catalog/icons.ts` 与 `catalog/countries.ts::countriesMeta[country].icon` 取，honk 会校验“绝对 HTTP(S) URL + 不含空白 + ≤ 2048 字”，不符合会直接拒收。
 
 ### 新增项目自维护的 ruleset 时
 

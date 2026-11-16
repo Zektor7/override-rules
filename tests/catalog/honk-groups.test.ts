@@ -4,8 +4,10 @@ import { describe, it } from "node:test";
 import {
     HONK_GROUP_NAMES,
     HONK_POLICIES,
+    HONK_POLICY_VALUES,
     assertHonkCountryMappings,
     honkCountryName,
+    isHonkPolicy,
     requireHonkName,
     toHonkName,
 } from "../../src/catalog/honk-groups";
@@ -89,7 +91,50 @@ describe("honkCountryName", () => {
 describe("HONK_POLICIES", () => {
     it("三种 grouptype 各自映射到 honk policy", () => {
         assert.equal(HONK_POLICIES[0], "select");
-        assert.equal(HONK_POLICIES[1], "min_moving_avg");
+        // grouptype=1 默认走 score（honk 侧推荐），与 mihomo 侧“自动选”语义对齐。
+        assert.equal(HONK_POLICIES[1], "score");
         assert.equal(HONK_POLICIES[2], "loadbalance");
+    });
+});
+
+describe("HONK_POLICY_VALUES / isHonkPolicy", () => {
+    it("白名单包含规范名与 dae 兼容写法", () => {
+        for (const expected of [
+            "select",
+            "selector",
+            "fixed",
+            "urltest",
+            "min_moving_avg",
+            "min_avg10",
+            "min_last_delay",
+            "loadbalance",
+            "roundrobin",
+            "round_robin",
+            "balance",
+            "fallback",
+            "score",
+        ]) {
+            assert.ok(HONK_POLICY_VALUES.includes(expected), `白名单缺少 ${expected}`);
+        }
+    });
+
+    it("isHonkPolicy 接受白名单值，忽略大小写", () => {
+        assert.ok(isHonkPolicy("select"));
+        assert.ok(isHonkPolicy("SELECT"));
+        assert.ok(isHonkPolicy(" score "));
+        assert.ok(isHonkPolicy("min_moving_avg"));
+    });
+
+    it("isHonkPolicy 接受 fixed(N) 写法", () => {
+        assert.ok(isHonkPolicy("fixed(0)"));
+        assert.ok(isHonkPolicy("fixed(3)"));
+    });
+
+    it("isHonkPolicy 拒绝非法值与空输入", () => {
+        assert.ok(!isHonkPolicy(undefined));
+        assert.ok(!isHonkPolicy(""));
+        assert.ok(!isHonkPolicy("url-test"));
+        assert.ok(!isHonkPolicy("auto"));
+        assert.ok(!isHonkPolicy("unknown-policy"));
     });
 });

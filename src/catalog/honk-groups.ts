@@ -160,14 +160,52 @@ export function assertHonkCountryMappings(): void {
 }
 
 /**
- * `grouptype` → honk 组 policy。
+ * `grouptype` → honk 组 policy 的默认映射（仅供向后兼容）。
  *
  * - 0（select 手动）→ `select`；
- * - 1（url-test 自动测速）→ `min_moving_avg`（对齐 dae/honk 的滚动延迟最低策略）；
+ * - 1（自动选）→ `score`（honk 侧推荐默认，基于实际可靠性与有界验证选成员，
+ *   比 dae 时代的 `min_moving_avg` 更贴近“自动”预期）；
  * - 2（load-balance）→ `loadbalance`。
+ *
+ * 用户如果显式传 `#policy=<value>`，会覆盖本映射（见 `buildHonkRuntimeOptions`）。
  */
-export const HONK_POLICIES: Record<GroupType, "select" | "min_moving_avg" | "loadbalance"> = {
+export const HONK_POLICIES: Record<GroupType, "select" | "score" | "loadbalance"> = {
     0: "select",
-    1: "min_moving_avg",
+    1: "score",
     2: "loadbalance",
 };
+
+/**
+ * honk 支持的 policy 白名单（见 `doc/zh/reference/groups.md#策略`）。
+ *
+ * 保留 dae 侧的兼容写法（`urltest` / `min_moving_avg` / `min_avg10` / `min_last_delay`
+ * / `roundrobin` / `round_robin` / `balance` / `fixed(N)`）方便从 dae 手册直接搬。
+ * `buildHonkRuntimeOptions` 对非法值回退到 `HONK_POLICIES[grouptype]`。
+ */
+export const HONK_POLICY_VALUES: readonly string[] = [
+    "select",
+    "selector",
+    "fixed",
+    "urltest",
+    "min_moving_avg",
+    "min_avg10",
+    "min_last_delay",
+    "loadbalance",
+    "roundrobin",
+    "round_robin",
+    "balance",
+    "fallback",
+    "score",
+] as const;
+
+/** 判断传入的 policy 字符串是否是 honk 支持的值（大小写不敏感，支持 fixed(N) 写法）。 */
+export function isHonkPolicy(raw: string | undefined | null): boolean {
+    if (!raw) return false;
+    const trimmed = raw.trim().toLowerCase();
+    if (HONK_POLICY_VALUES.includes(trimmed)) return true;
+    // fixed(N)：手动固定到第 N 个成员，honk 解析器会剥括号后缀。不用正则避免 sonarjs
+    // 对 `\([^)]*\)$` 启发式报“super-linear”告警。
+    if (!trimmed.startsWith("fixed(") || !trimmed.endsWith(")")) return false;
+    const inner = trimmed.slice(6, -1);
+    return inner.length > 0 && [...inner].every((ch) => ch >= "0" && ch <= "9");
+}

@@ -284,7 +284,7 @@ URL hash 里的参数用 `&` 分隔，与 mihomo 侧完全兼容。分三类：*
 
 | 参数 | honk 语义 | 备注 |
 | --- | --- | --- |
-| `grouptype` | 0→`policy: select`；1→`policy: min_moving_avg`；2→`policy: loadbalance` | 默认 1 |
+| `grouptype` | 派生自动类组的默认 policy：0→`select`；1→`score`；2→`loadbalance`（显式传 `#policy=` 会覆盖） | 默认 1 |
 | `threshold` | 地区节点数阈值；不足 2 个地区时展平 | 默认 2 |
 | `ipv6` | 控制 `dns.routing.request` 是否加 `qtype(aaaa) -> reject` | 默认 false |
 | `quic` | 控制 `routing` 是否插入 `l4proto(udp) && dport(443) -> block` | 默认 false |
@@ -302,6 +302,20 @@ URL hash 里的参数用 `&` 分隔，与 mihomo 侧完全兼容。分三类：*
 - `sub-route`：拉订阅的出口，默认 `direct`；也可以是某个组名（比如 `Select`），首次启动时如果这个组还没有可用节点会拉取失败——推荐保持 `direct`。
 - `sub-cache`：是否把订阅正文缓存到本地状态库（离线可用），默认 `true`。
 - `sub-ua`：拉订阅的 User-Agent，默认 `clash.meta/1.19.30`（部分机场按 UA 判定分发格式，用 mihomo UA 可拿到最完整的 Clash YAML 正文）。
+
+策略（group）：
+
+- `policy`（**honk 侧新默认**）：`Auto` / 地区组 / 服务组 / `LowCost` / `Final` 统一使用的 policy，默认 `score`（honk 基于实际可靠性 + 新鲜目标质量 + 有界验证选成员，比 `min_moving_avg` 更贴近“自动”预期）。可选值（大小写不敏感，来自 [groups.md#策略](https://github.com/daeuniverse/honk/blob/main/doc/zh/reference/groups.md#%E7%AD%96%E7%95%A5)）：
+  - `select` / `selector` / `fixed` / `fixed(N)`：手动固定；
+  - `urltest` / `min_moving_avg` / `min_avg10` / `min_last_delay`：延迟优先；
+  - `loadbalance` / `roundrobin` / `round_robin` / `balance`：轮换；
+  - `fallback`：按声明顺序取首个存活；
+  - `score`：基于业务观测的智能选（默认）。
+  `Select` / `Fallback` 两个组不受本参数影响，分别固定 `select` / `fallback`。非法值回退到 `HONK_POLICIES[grouptype]`。
+- `tolerance`：URLTest/Score 切换阈值（毫秒，纯整数），仅在 policy 为自动选时写入。默认不写，honk 侧默认 50。
+- `idle-timeout`：URLTest 组连续多少秒没被选用后暂停成员探测（纯整数秒），默认不写（honk 侧 1800）。语义类似 Clash 的 `lazy`。
+- `check-url`：非 Selector 策略的按组 TCP 健康检查 URL（HTTP(S)，后面可接逗号分隔的字面 IPv4/IPv6）；默认不写（honk 使用内置探测目标）。**不要给 Selector 组写**，honk 会忽略。
+- `interrupt`：自动选择类组是否在成员变化时中断已有连接（`true`/`false`/`1`/`0`），默认 `false`。`Select` 与 `Final` 自身硬编码为 `true`，不受本参数影响。
 
 DNS：
 
@@ -331,9 +345,10 @@ DNS：
 
 假设你现有 mihomo 用的 Sub-Store collection 下载 URL 是 `https://substore.example/sadsd/download/abc?target=xyz`，想给 honk 用同一份订阅，且：
 
-- 地区组走 `min_moving_avg`（默认，不用写 `grouptype=1`）；
+- 自动类组走默认的 `score`（不写 `policy=` 就是 `score`）；
 - 排除 E-Hentai 与微博；
-- 每小时刷一次订阅。
+- 每小时刷一次订阅；
+- URLTest 组空闲 30 分钟就停探测。
 
 对应的 Sub-Store Override URL：
 
@@ -342,6 +357,7 @@ https://cdn.jsdelivr.net/gh/powerfullz/override-rules/convert-honk.min.js
   #subscription=https%3A%2F%2Fsubstore.example%2Fsadsd%2Fdownload%2Fabc%3Ftarget%3Dxyz
   &exclude=EHentai,Weibo
   &sub-interval=3600s
+  &idle-timeout=1800
 ```
 
 （示例里的换行只是为了看，实际写在同一行）。

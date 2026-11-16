@@ -5,8 +5,11 @@ import { analyzeNodes } from "../../../src/analysis/classify";
 import { buildFeatureFlags } from "../../../src/args/parse";
 import { buildHonkRuntimeOptions } from "../../../src/args/honk-parse";
 import { renderHonkConfig } from "../../../src/builders/honk/render";
-import type { InlineRuleSetMap } from "../../../src/types/honk";
+import type { HonkScriptArgs } from "../../../src/types/honk";
+import type { ScriptArgs } from "../../../src/types/args";
 import type { ProxyNode } from "../../../src/types/proxy";
+
+type Args = ScriptArgs & HonkScriptArgs;
 
 const PROXIES: ProxyNode[] = [
     { name: "香港01" },
@@ -17,9 +20,9 @@ const PROXIES: ProxyNode[] = [
     { name: "美国02" },
 ];
 
-function render(args: Record<string, string> = {}, inline: InlineRuleSetMap = {}): string {
+function render(args: Args = {}, inline: Parameters<typeof renderHonkConfig>[1] = {}): string {
     const flags = buildFeatureFlags(args);
-    const opts = buildHonkRuntimeOptions(args);
+    const opts = buildHonkRuntimeOptions(args, flags);
     const nodes = analyzeNodes(PROXIES, flags.countryThreshold, flags.preferPatterns);
     return renderHonkConfig({ flags, opts, nodes }, inline);
 }
@@ -55,19 +58,26 @@ describe("renderHonkConfig 段落顺序", () => {
         assert.ok(!/^experimental \{/m.test(text), "config.dae 不应再包含 experimental {} 段");
     });
 
-    it("banner 参数指纹反映 flags 与 opts 关键值", () => {
+    it("banner 参数指纹反映 policy 与关键开关", () => {
         const text = render({
-            grouptype: "2",
+            policy: "urltest",
             adblock: "0",
             ipv6: "true",
             quic: "true",
             subscription: "https://sub.example/token",
         });
-        assert.match(text, /grouptype=2 \(loadbalance\)/);
+        assert.match(text, /policy=urltest \(override grouptype=1\)/);
         assert.match(text, /adblock=0/);
         assert.match(text, /ipv6=on/);
         assert.match(text, /quic=on/);
         assert.match(text, /subscription=https:\/\/sub\.example\/token/);
+    });
+
+    it("banner 里 policy 派生自 grouptype 时标注来源", () => {
+        assert.match(render({ grouptype: "2" }), /policy=loadbalance \(grouptype=2\)/);
+        assert.match(render({ grouptype: "0" }), /policy=select \(grouptype=0\)/);
+        // 默认 grouptype=1 → score
+        assert.match(render({}), /policy=score \(grouptype=1\)/);
     });
 
     it("banner 显示 include/exclude/prefer 参数", () => {
@@ -164,12 +174,43 @@ describe("dns 段", () => {
     });
 });
 
+describe("group 段", () => {
+    it("默认所有自动类组 policy=score 且带 icon", () => {
+        const text = render();
+        for (const name of ["Auto", "HK", "TW", "US", "LowCost", "Final"]) {
+            const idx = text.indexOf(`    ${name} {`);
+            assert.ok(idx >= 0, `缺少 ${name} 组`);
+            const block = text.slice(idx, text.indexOf("\n    }", idx));
+            assert.match(block, /policy: score/);
+            assert.match(block, /icon: 'https?:\/\//);
+        }
+    });
+
+    it("Select 固定 policy=select 且带 interrupt_connections", () => {
+        const text = render();
+        const idx = text.indexOf("    Select {");
+        const block = text.slice(idx, text.indexOf("\n    }", idx));
+        assert.match(block, /policy: select/);
+        assert.match(block, /interrupt_connections: true/);
+    });
+
+    it("#policy=urltest 时 URLTest 调优字段出现在自动类组上", () => {
+        const text = render({
+            policy: "urltest",
+            tolerance: "80",
+            "idle-timeout": "600",
+            "check-url": "https://cp.cloudflare.com",
+        });
+        assert.match(text, /policy: urltest/);
+        assert.match(text, /tolerance: 80/);
+        assert.match(text, /idle_timeout: 600/);
+        assert.match(text, /check_url: 'https:\/\/cp\.cloudflare\.com'/);
+    });
+});
+
 describe("routing 段", () => {
     it("routing 段包含自维护 ruleset 的内联域名", () => {
-        const inline: InlineRuleSetMap = {
-            PT: ["DOMAIN-SUFFIX,byr.pt", "DOMAIN-SUFFIX,m-team.cc"],
-        };
-        const text = render({}, inline);
+        const text = render({}, { PT: ["DOMAIN-SUFFIX,byr.pt", "DOMAIN-SUFFIX,m-team.cc"] });
         assert.match(text, /domain\(suffix: byr\.pt, m-team\.cc\) -> PT/);
     });
 

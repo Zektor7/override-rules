@@ -20,7 +20,7 @@ const EMPTY_INLINE: InlineRuleSetMap = {};
 
 function run(args: Record<string, string> = {}, inline: InlineRuleSetMap = EMPTY_INLINE): string[] {
     const flags = buildFeatureFlags(args);
-    const opts = buildHonkRuntimeOptions(args);
+    const opts = buildHonkRuntimeOptions(args, flags);
     const nodes = analyzeNodes(PROXIES, flags.countryThreshold, flags.preferPatterns);
     return buildHonkRoutingLines({ flags, opts, nodes }, inline);
 }
@@ -197,7 +197,7 @@ describe("buildHonkRoutingLines 端到端", () => {
             { name: "Tailscale节点", type: "tailscale" },
         ];
         const flags = buildFeatureFlags({});
-        const opts = buildHonkRuntimeOptions({});
+        const opts = buildHonkRuntimeOptions({}, flags);
         const nodes = analyzeNodes(tailscaleProxies, flags.countryThreshold, flags.preferPatterns);
         const lines = buildHonkRoutingLines({ flags, opts, nodes }, EMPTY_INLINE);
         assert.ok(!lines.some((l) => l.includes("100.64.0.0")));

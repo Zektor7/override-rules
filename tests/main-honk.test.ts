@@ -48,9 +48,28 @@ describe("runHonkEntry 契约", () => {
             grouptype: "2",
         } satisfies EntryArgs);
         assert.match(result, /subscription=https:\/\/sub\.example\/token/);
-        assert.match(result, /grouptype=2 \(loadbalance\)/);
+        assert.match(result, /policy=loadbalance \(grouptype=2\)/);
         assert.match(result, /airport-a: 'https:\/\/sub\.example\/token'/);
         assert.match(result, /interval: 3600s/);
+    });
+
+    it("默认自动类组 policy=score，与 mihomo 侧 grouptype=1 同义", () => {
+        const result = runHonkEntry(CONFIG, {});
+        assert.match(result, /policy=score \(grouptype=1\)/);
+        // 自动类组里实际写入 policy: score
+        const autoIdx = result.indexOf("    Auto {");
+        const autoBlock = result.slice(autoIdx, result.indexOf("\n    }", autoIdx));
+        assert.match(autoBlock, /policy: score/);
+    });
+
+    it("#policy 直接覆盖 grouptype 映射", () => {
+        const result = runHonkEntry(CONFIG, { grouptype: "0", policy: "urltest" });
+        assert.match(result, /policy=urltest \(override grouptype=0\)/);
+        const hkIdx = result.indexOf("    HK {");
+        const hkBlock = result.slice(hkIdx, result.indexOf("\n    }", hkIdx));
+        assert.match(hkBlock, /policy: urltest/);
+        // icon 也一并写入
+        assert.match(hkBlock, /icon: 'https?:\/\//);
     });
 
     it("自维护 ruleset 会内联到 routing 段（PT/TikTok 等）", () => {
@@ -93,7 +112,7 @@ describe("runHonkEntry 契约", () => {
             "data-dir": "/var/lib/honk",
             "native-api": "false",
             "clash-secret": "hunter2",
-        } as EntryArgs);
+        } as unknown as EntryArgs);
         assert.equal(
             withDeploymentArgs,
             baseline,

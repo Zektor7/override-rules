@@ -3,9 +3,10 @@
  *
  * honk 是 dae 的 Rust + eBPF 重写（<https://github.com/daeuniverse/honk>），
  * 配置语法沿用 dae（`.dae` 文件），与 Clash/Mihomo 的 YAML 存在语义鸿沟：
- * - 组只能靠 `filter: name(regex: '…')` 命中订阅节点，或用 `filter: group(...)` 嵌套；
+ * - 组靠 `filter: name(regex: '…')` / `subtag(...)` / `group(...)` 三种谓词选节点；
  * - 没有 dialer-proxy 链式代理、FakeIP、TUN、Sniffer、Tailscale outbound；
- * - 组名只允许 `[A-Za-z0-9]`。
+ * - 组名只允许 `[A-Za-z0-9]`（含空格在 dae 语法里合法，但下游面板与本项目历史
+ *   约定都用 ASCII，保持一致）。
  *
  * 本项目只负责 honk 配置里的**策略骨架**（subscription / group / dns / routing / assets），
  * `global {}` 与 `experimental {}` 属于机器/部署参数，交给用户的 `system.dae`，
@@ -39,6 +40,20 @@ export interface HonkScriptArgs {
     /** 拉取订阅的 User-Agent。默认 `clash.meta/1.19.30`。 */
     "sub-ua"?: string;
 
+    /**
+     * 自动选择组的 policy，取值范围见 `docs/zh/reference/groups.md#策略`。
+     * 默认 `score`；显式传 `grouptype` 时以 grouptype 派生为准（除非同时传了 policy）。
+     */
+    policy?: string;
+    /** URLTest/Score 切换阈值，单位毫秒（纯整数）。默认 honk 侧 50。 */
+    tolerance?: string;
+    /** URLTest 组连续多少秒没被选用后暂停成员探测（纯整数秒）。默认 honk 侧 1800。 */
+    "idle-timeout"?: string;
+    /** 非 Selector 策略的按组 TCP 健康检查 URL（HTTP(S)，可带逗号分隔的字面 IP）。 */
+    "check-url"?: string;
+    /** 是否在组成员变化时中断已有连接（`true/false/1/0`）。默认 `false`。 */
+    interrupt?: string;
+
     /** honk dns.upstream.default 的 URL。默认阿里 DoH。 */
     "dns-default"?: string;
     /** honk dns.upstream.remote 的 URL。默认 Cloudflare DoH。 */
@@ -57,6 +72,17 @@ export interface HonkRuntimeOptions {
     subscriptionRoute: string;
     subscriptionCache: boolean;
     subscriptionUa: string;
+
+    /** 自动选择类组用的 policy；见 `HONK_POLICY_VALUES` 白名单。 */
+    policy: string;
+    /** `null` 时不写入 `tolerance`，走 honk 默认 50。 */
+    tolerance: number | null;
+    /** `null` 时不写入 `idle_timeout`，走 honk 默认 1800。 */
+    idleTimeout: number | null;
+    /** `null` 时不写入 `check_url`。 */
+    checkUrl: string | null;
+    /** 是否给自动选择类组写 `interrupt_connections: true`。 */
+    interruptConnections: boolean;
 
     dnsDefaultUpstream: string;
     dnsRemoteUpstream: string;
@@ -82,16 +108,32 @@ export interface HonkBuildContext {
  */
 export type InlineRuleSetMap = Readonly<Record<string, readonly string[]>>;
 
-/** honk group 块里单个组的字段集合；未指定的字段在渲染时省略。 */
+/**
+ * honk group 块里单个组的字段集合；未指定的字段在渲染时省略。
+ *
+ * 字段与 honk 官方 `doc/zh/reference/groups.md` 一一对应：
+ * `policy` / `filter` / `default` / `final` / `check_url` / `tolerance` /
+ * `idle_timeout` / `interrupt_connections` / `icon`。
+ */
 export interface HonkGroupSpec {
     /** honk 组名，只允许 `[A-Za-z0-9]`。 */
     name: string;
     /** `filter` 表达式，决定哪些订阅节点归入本组。 */
-    filter: string;
-    /** honk policy 值；参见 `HONK_POLICIES` 与官方文档。 */
+    filter?: string;
+    /** honk policy 值；参见 `HONK_POLICY_VALUES`。 */
     policy: string;
+    /** Selector 策略的初始或回退成员 tag。 */
+    defaultValue?: string;
     /** honk 组内回退出口：`direct` / `block` / 其他组名。 */
     final?: string;
-    /** 切换节点时是否中断已有连接（Proxy/Final 类大流量组建议 true）。 */
+    /** 切换节点时是否中断已有连接。 */
     interruptConnections?: boolean;
+    /** 组图标绝对 URL；honk 会校验长度 ≤2048、不含空白。 */
+    icon?: string;
+    /** URLTest/Score 切换阈值（毫秒）。 */
+    tolerance?: number;
+    /** URLTest 空闲秒数后暂停成员探测。 */
+    idleTimeout?: number;
+    /** 非 Selector 策略的按组 TCP 健康检查 URL。 */
+    checkUrl?: string;
 }

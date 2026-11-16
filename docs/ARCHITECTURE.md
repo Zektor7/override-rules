@@ -276,10 +276,22 @@ honk 入口的 `$arguments` 同时包含三类参数，互不干扰：
 | 类别 | 字段 | 解析器 | 默认值 |
 | --- | --- | --- | --- |
 | 与 mihomo **同义** | `grouptype` / `threshold` / `ipv6` / `quic` / `adblock` / `include` / `exclude` / `prefer` | `args/parse.ts::buildFeatureFlags()` | 与 mihomo 分支一致，`args/schema.ts::ARG_DEFAULTS` |
-| **honk 独有（策略）** | `subscription` / `sub-*` / `dns-*` | `args/honk-parse.ts::buildHonkRuntimeOptions()` | `args/honk-schema.ts::HONK_ARG_DEFAULTS` |
+| **honk 独有（策略）** | `subscription` / `sub-*` / `policy` / `tolerance` / `idle-timeout` / `check-url` / `interrupt` / `dns-*` | `args/honk-parse.ts::buildHonkRuntimeOptions()` | `args/honk-schema.ts::HONK_ARG_DEFAULTS` |
 | **honk 会忽略 / 已迁到 `system.dae`** | `landing` / `fakeip` / `tun` / `sniffer` / `keepalive` / `full` / `regex`（本身无对应）；`lan-iface` / `wan-iface` / `dial-mode` / `data-dir` / `log-level` / `native-*` / `clash-*`（已迁到 `system.dae`） | 不读取 | — |
 
-两个解析器都只取自己关心的键，多余字段自然丢弃；honk 入口把 `rawArgs` 同时传给 `buildFeatureFlags` 与 `buildHonkRuntimeOptions`，确保两侧行为一致。完整的 honk 参数列表与默认值见 [`README.md`](../README.md#honk-支持的传参)。
+两个解析器都只取自己关心的键，多余字段自然丢弃；honk 入口先跑 `buildFeatureFlags` 得到 `flags`，再把 `flags` 一并传给 `buildHonkRuntimeOptions(args, flags)`，用于 `#policy` 缺省时回退到 `HONK_POLICIES[flags.groupType]`（默认 grouptype=1 → `score`）。完整的 honk 参数列表与默认值见 [`README.md`](../README.md#honk-支持的传参)。
+
+#### 自动选择类组的默认策略：score
+
+honk 官方定义的 `policy` 有五种规范值（`selector` / `urltest` / `loadbalance` / `fallback` / `score`），每种还带若干兼容写法（`fixed(N)` / `min_moving_avg` / `roundrobin` 等），完整白名单见 `catalog/honk-groups.ts::HONK_POLICY_VALUES`。本项目**默认让自动类组（Auto / 地区 / 服务 / LowCost / Final）统一使用 `score`**：
+
+- `score` 是 honk 相较 dae 新增的策略，会基于实际业务可靠性 + 新鲜目标质量 + 有界验证选成员；
+- 与 mihomo 分支 `grouptype=1` 的“自动选”语义最匹配（mihomo 侧就是 `urltest`，honk 侧 `score` 比 `urltest` 更贴“自动”预期）；
+- 需要回到 dae 经典 `min_moving_avg` 语义，传 `#policy=urltest` 或 `#policy=min_moving_avg` 即可；
+- 需要轮换出口，传 `#policy=loadbalance`；
+- `Select` 与 `Fallback` 两个组不受 `#policy` 影响（面板上手动切 / 按顺序取首个存活，语义固定）。
+
+URLTest/Score 的调优字段也全部参数化：`#tolerance=<ms>` / `#idle-timeout=<s>` / `#check-url=<https://...>` / `#interrupt=true|false`。`Select` / `Fallback` 不会写这些字段（honk 会忽略并打 warning），只在自动选类组上输出。
 
 #### 自维护 ruleset 的内联链
 

@@ -20,13 +20,18 @@ https://github.com/powerfullz/override-rules
 - exclude: 排除指定规则，逗号分隔
 - prefer: 优先选路节点正则，逗号分隔；命中时生成 Prefer 组（policy=fallback, final=Auto）
 
-honk 独有参数：
+honk 独有参数（策略层）：
 - subscription: honk 的订阅 URL（URL 编码），会写入 subscription { my_sub: '<URL>' }；honk 按 interval 自动重拉
 - subtag: 订阅 tag 名，默认 `my_sub`
 - sub-interval: 订阅刷新间隔，默认 `86400s`；honk 接受 `30m` / `1h` 等
 - sub-route: 拉订阅的出口（`direct` 或组名），默认 `direct`
 - sub-cache: 是否缓存订阅正文到本地状态库，默认 true
 - sub-ua: 拉订阅的 User-Agent，默认 `clash.meta/1.19.30`
+- policy: Auto/地区/服务/LowCost/Final 组的 honk 策略，默认 `score`；可选：select / fixed / urltest / min_moving_avg / min_avg10 / min_last_delay / loadbalance / roundrobin / fallback / score；非法值回退到 HONK_POLICIES[grouptype]（默认就是 score）
+- tolerance: URLTest/Score 切换阈值（毫秒，纯整数），默认不写（honk 侧 50）
+- idle-timeout: URLTest 组空闲多少秒后暂停探测（纯整数），默认不写（honk 侧 1800）
+- check-url: 非 Selector 策略的按组健康检查 URL（可带逗号分隔字面 IP），默认不写
+- interrupt: 自动选择类组是否在成员变化时中断已有连接（`true/false/1/0`），默认 `false`
 - dns-default: honk dns.upstream.default 的 URL，默认阿里 DoH
 - dns-remote: honk dns.upstream.remote 的 URL，默认 Cloudflare DoH
 - dns-remote-exit: remote 绑定的出口组名，默认 `Select`
@@ -76,7 +81,7 @@ export function runHonkEntry(config: ClashConfig, rawArgs: HonkEntryArgs): strin
     }
 
     const flags = buildFeatureFlags(rawArgs);
-    const opts = buildHonkRuntimeOptions(rawArgs);
+    const opts = buildHonkRuntimeOptions(rawArgs, flags);
     const nodes = analyzeNodes(config.proxies, flags.countryThreshold, flags.preferPatterns);
 
     return buildHonkDae({ flags, opts, nodes }, INLINED_HONK_RULESETS);

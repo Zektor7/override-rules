@@ -199,8 +199,8 @@ $arguments
 | 调整代理组字段顺序或空组兜底 | `src/domain/proxy-group.ts` | `tests/domain/proxy-group.test.ts` |
 | 调整 DNS / TUN / full 配置 | `src/builders/dns.ts`、`tun.ts`、`full-config.ts` | 对应测试与 `README.md` |
 | 调整静态 YAML 生成 | `scripts/yaml_generator/generator.ts`、`fake_proxies.json` | `README.md` 中的文件命名与说明 |
-| 新增/修改 honk 独有参数 | `src/types/honk.ts`、`src/args/honk-schema.ts`、`src/args/honk-parse.ts`、`src/builders/honk/*` | `README.md` honk 参数表、`src/main-honk.ts` 顶部 banner、`tests/args/honk-parse.test.ts`；仅限“策略”相关字段，部署层参数（网卡/面板/内核相关）写到 `system.dae`，不进本项目 |
-| 新增/调整 honk 输出（组/地区/映射） | `src/builders/honk/`、`src/catalog/honk-groups.ts` | `README.md` honk 章节、`docs/ARCHITECTURE.md` 的 honk 语义映射表；新增代理组/地区时需同步补 `HONK_GROUP_NAMES` / `HONK_COUNTRY_CODES` |
+| 新增/修改 honk 独有参数 | `src/types/honk.ts`、`src/args/honk-schema.ts`、`src/args/honk-parse.ts`、`src/builders/honk/*` | `README.md` honk 参数表、`src/main-honk.ts` 顶部 banner、`tests/args/honk-parse.test.ts`；仅限“策略”相关字段（订阅/组 policy/DNS），部署层参数（网卡/面板/内核相关）写到 `system.dae`，不进本项目 |
+| 新增/调整 honk 输出（组/地区/映射/policy） | `src/builders/honk/`、`src/catalog/honk-groups.ts` | `README.md` honk 章节、`docs/ARCHITECTURE.md` 的 honk 语义映射表；新增代理组/地区时需同步补 `HONK_GROUP_NAMES` / `HONK_COUNTRY_CODES` 与 `ICONS`；自动类组默认 policy=`score`，改默认时同步改 `HONK_POLICIES` 与 `HONK_ARG_DEFAULTS.policy` |
 | 修改自维护 `ruleset/*.list` | 直接改 `ruleset/*.list`；新键时补 `scripts/generate-honk-rulesets.mjs` 的 `OWNED_RULESETS` | `npm run build` 后提交自动重生成的 `src/generated/honk-rulesets.ts` |
 | 更新架构或数据流 | `docs/ARCHITECTURE.md` | 必要时同步 `README.md` |
 

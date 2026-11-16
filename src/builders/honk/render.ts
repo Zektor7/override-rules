@@ -59,9 +59,13 @@ function renderParameterFingerprint(ctx: HonkBuildContext): string {
     const excludeLabel =
         flags.excludedRules.size > 0 ? Array.from(flags.excludedRules).join("|") : "-";
     const preferLabel = flags.preferPatterns ? flags.preferPatterns.join("|") : "-";
+    const policyLabel =
+        opts.policy === HONK_POLICIES[flags.groupType]
+            ? `${opts.policy} (grouptype=${flags.groupType})`
+            : `${opts.policy} (override grouptype=${flags.groupType})`;
     return [
         `subscription=${opts.subscriptionUrl}`,
-        `grouptype=${flags.groupType} (${HONK_POLICIES[flags.groupType]})`,
+        `policy=${policyLabel}`,
         `adblock=${flags.adblockSource}`,
         `ipv6=${flags.ipv6Enabled ? "on" : "off"}`,
         `quic=${flags.quicEnabled ? "on" : "off"}`,
