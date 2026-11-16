@@ -239,16 +239,29 @@ https://git.l3zc.com/powerfullz/override-rules/raw/branch/dist/yamls/config_gt-0
 
 ### 关于 honk 客户端的动态覆写（convert-honk.min.js）
 
-[honk](https://github.com/daeuniverse/honk) 是 dae 的 Rust + eBPF 重写（Linux 6.12+，常见于 OpenWrt / 软路由），配置文件为 `config.dae`（dae 语法），与 Clash/Mihomo 的 YAML 存在语义鸿沟。本项目为 honk 提供一个与 `convert.min.js` **同构**的动态覆写入口 `convert-honk.min.js`：同样绑到 Sub-Store 里作为 JS Override，`main(config)` 拿到上游 Clash 对象后**直接返回一段 `config.dae` 文本**，Sub-Store 会把字符串原样吐到响应体，honk `wget` 下来就是能用的配置。
+[honk](https://github.com/daeuniverse/honk) 是 dae 的 Rust + eBPF 重写（Linux 6.12+，常见于 OpenWrt / 软路由），配置文件为 `config.dae`（dae 语法），与 Clash/Mihomo 的 YAML 存在语义鸿沟。本项目为 honk 提供一个与 `convert.min.js` **同构**的动态覆写入口 `convert-honk.min.js`：同样绑到 Sub-Store 里作为 JS Override，`main(config)` 拿到上游 Clash 对象后**直接返回一段 `config.dae` 文本**，Sub-Store 会把字符串原样吐到响应体，honk `wget` 下来就是能用的策略骨架。
 
-#### 使用方式（跟 mihomo 完全同构）
+#### 产物只包含策略骨架
 
-1. 在 Sub-Store 里新建一个 **Override**，Source 选 URL：
+本项目输出的 `config.dae` 只写与分类/分流相关的五段：`subscription {}` / `group {}` / `dns {}` / `routing {}` / `assets {}`；文件顶部固定写：
+
+```
+include {
+    system.dae
+}
+```
+
+`global {}`（网卡、dial_mode、data_dir、log_level 等）与 `experimental {}`（native_api / clash_api / cache_file）属于机器/部署参数，**需要你在同目录下自己创建 `system.dae`**，honk 会把两部分自动合并。参考下面「system.dae 参考」。
+
+#### 使用流程
+
+1. **先在路由器上创建 `/etc/honk/system.dae`**，写入 `global {}` 与 `experimental {}` 两段（参考下面的参考模板）。
+2. 在 Sub-Store 里新建 Override，Source 选 URL：
    ```
-   https://cdn.jsdelivr.net/gh/powerfullz/override-rules/convert-honk.min.js#subscription=<url-encoded-sub>&grouptype=1&lan-iface=br-lan
+   https://cdn.jsdelivr.net/gh/powerfullz/override-rules/convert-honk.min.js#subscription=<url-encoded-sub>
    ```
-2. 新建一个专给 honk 用的 **Subscription**（可以复用你现有的 collection），把上面的 Override 绑上去。
-3. 客户端 GET 这个 Subscription 的 download URL，返回的就是 `config.dae` 全文，直接落到 `/etc/honk/config.dae`：
+3. 新建一个专给 honk 用的 Subscription（可以直接复用你现有的 collection），把上面的 Override 绑上去。
+4. 客户端 GET 这个 Subscription 的 download URL，返回的就是 `config.dae` 全文：
    ```bash
    wget -qO /etc/honk/config.dae.new "https://substore.example/xxx/api/subscription/<id>/download" \
      && honk-core config validate --config /etc/honk/config.dae.new \
@@ -261,11 +274,11 @@ https://git.l3zc.com/powerfullz/override-rules/raw/branch/dist/yamls/config_gt-0
 - **骨架**（本文件生成的 `config.dae` 本身）：**一次性 curl**。改参数、改分流规则才需要重跑；一年改不了几次。
 - **节点集合**（骨架里 `subscription {}` 那个 URL）：honk **原生定时重拉**（默认 `interval: 86400s`，可通过 `#sub-interval=3600s` 缩短），机场加/减节点你不需要动 honk 或 Sub-Store，到点自己刷。想立刻刷新：`kill -HUP $(pidof honk-core)`。
 
-推荐 `subscription` 参数指向**你现有 mihomo 那边用的 Sub-Store collection 下载 URL**（已经带 `include/exclude/prefer` 处理过的那份 Clash YAML）——这样两条链共用同一个上游，honk/mihomo 拿到的节点集合天然一致；`config.dae` 里的 `filter: name(regex: '…')` 会再对节点名字做二次匹配落到不同策略组。
+推荐 `subscription` 参数指向**你现有 mihomo 那边用的 Sub-Store collection 下载 URL**（已经带 `include/exclude/prefer` 处理过的那份 Clash YAML）——两条链共用同一个上游，honk/mihomo 拿到的节点集合天然一致；`config.dae` 里的 `filter: name(regex: '…')` 会再对节点名字做二次匹配落到不同策略组。
 
 #### honk 支持的传参
 
-URL hash 里的参数用 `&` 分隔，与 mihomo 侧完全兼容。分三类：**与 mihomo 同义**、**honk 独有**、**honk 会忽略的 mihomo 参数**。
+URL hash 里的参数用 `&` 分隔，与 mihomo 侧完全兼容。分三类：**与 mihomo 同义**、**honk 独有（策略层）**、**honk 会忽略或已迁到 system.dae**。
 
 **与 mihomo 完全同义（详见上文「JS 覆写使用示例」，此处只列差异）：**
 
@@ -279,7 +292,7 @@ URL hash 里的参数用 `&` 分隔，与 mihomo 侧完全兼容。分三类：*
 | `include` / `exclude` | 与 mihomo 侧共用 `shouldKeepRule()` 语义，作用于 `routing {}` 段落 | Fork 特性 |
 | `prefer` | 命中时生成 `Prefer` 组：`policy: fallback` + `final: Auto` | Fork 特性 |
 
-**honk 独有（详写）：**
+**honk 独有（策略层，全部写到 `config.dae` 本体里）：**
 
 订阅：
 
@@ -290,44 +303,26 @@ URL hash 里的参数用 `&` 分隔，与 mihomo 侧完全兼容。分三类：*
 - `sub-cache`：是否把订阅正文缓存到本地状态库（离线可用），默认 `true`。
 - `sub-ua`：拉订阅的 User-Agent，默认 `clash.meta/1.19.30`（部分机场按 UA 判定分发格式，用 mihomo UA 可拿到最完整的 Clash YAML 正文）。
 
-`global {}` 段（对应 honk 内核运行环境）：
-
-- `lan-iface`：LAN 网卡，默认 `br-lan`（OpenWrt x86 常见值）。用 `ip a` 查你自己的网卡名后覆盖，如 `#lan-iface=eth0`。
-- `wan-iface`：WAN 网卡，默认 `auto`（honk 自动探测）。
-- `dial-mode`：默认 `domain`（分流规则可直接命中域名，兼容 DoH/DoT）；`ip` 更省资源但会丢失域名分流能力；`domain_strict` 严格要求域名解析；`fallback` 域名失败回退 IP。
-- `data-dir`：honk 状态目录（面板选择、订阅缓存），默认 `/etc/honk`。OpenWrt 上 `/var` 是内存盘，重启会丢；放 `/etc/honk` 才持久化。
-- `log-level`：默认 `info`；可选 `fatal`/`error`/`warn`/`debug`/`trace`。
-- `allow-insecure`：全局允许自签/TLS 跳过验证，默认 `false`。仅在自建节点没配好证书时临时开。
-- `store-subscribe`：是否启用订阅正文持久化，默认 `true`。
-- `nfqueue`：是否启用 NFQUEUE 兼容层（部分内核特性下用来兜住 eBPF 漏过的流量），默认 `true`。
-- `auto-kernel`：honk 启动时自动改内核参数（`net.ipv4.ip_forward` 等），默认 `true`；如果你已经在系统 init 里手工配好可关闭。
-
-`dns {}` 段：
+DNS：
 
 - `dns-default`：国内 DNS 上游，默认 `https://223.5.5.5/dns-query?tls_server_name=dns.alidns.com`；honk upstream 支持 `udp://` / `https://` / `tcp://` / `quic://` / `dot://`。
 - `dns-remote`：国外 DNS 上游，默认 `https://8.8.8.8/dns-query?tls_server_name=dns.google`。
 - `dns-remote-exit`：`dns-remote` 绑定的出口组名，默认 `Select`（在面板切 Select 就等于切所有 DNS 出口）。可以改成 `Auto` 让 DNS 流量也走自动测速。
 - `dns-client-subnet`：向 upstream 携带 ECS 头，默认 `auto`（honk 按节点位置推断）；`off` 关闭；`<ipv4/24>` 手工指定。
 
-`experimental {}` 段（面板 API）：
+**本覆写不再接受的参数（已迁到 `system.dae`）：**
 
-- `native-api`：是否输出 `native_api {}` 块（Doona 面板接入），默认 `true`。honk 的 `native-api` 或 `full` 构建变体才有这个能力，`clash-api` 变体请设 `native-api=false`。
-- `native-listen`：`native_api.listen`，默认 `0.0.0.0:9527`（局域网可访问；公网暴露请自行加防火墙）。仅本机访问用 `127.0.0.1:9527`。
-- `native-ui`：`native_api.ui`，默认 `embedded`（内嵌 doona）；也可选 `embedded-lite`（轻量预览版）或磁盘路径。
-- `clash-api`：是否输出 `clash_api {}` 块（zashboard 等 Clash 面板兼容），默认 `true`。honk `native-api` 变体请设 `clash-api=false`。
-- `clash-controller`：`clash_api.external_controller`，默认 `0.0.0.0:9090`。
-- `clash-ui`：`clash_api.external_ui`，默认 `zashboard`（首次启动自动下载）。
-- `clash-secret`：`clash_api.secret` 面板口令，**默认空**——产物里会带一行提示注释要求设置；生产环境一定要给。
+以前支持的 `lan-iface` / `wan-iface` / `dial-mode` / `data-dir` / `log-level` / `allow-insecure` / `store-subscribe` / `nfqueue` / `auto-kernel`、以及 `native-api` / `native-listen` / `native-ui` / `clash-api` / `clash-controller` / `clash-ui` / `clash-secret` 全部不再接受。传了也不报错，但不会反映到产物里；请直接写到你的 `system.dae` 里。
 
 **honk 会忽略的 mihomo 参数**（传了没效果）：
 
 - `landing` / 前置代理链（honk 无 `dialer-proxy`）；
 - `fakeip`（honk 无 FakeIP 引擎）；
-- `tun`（honk 是 eBPF 透明代理，走 `nfqueue` 与内核参数）；
-- `keepalive`（honk 无独立开关，由内核管理）；
-- `full`（本项目的 `full=true` 是给 Clash 加一批内核参数，honk 侧不适用）；
-- `sniffer`（honk 的域名嗅探是 eBPF 层内建，无用户配置项）；
-- `regex`（honk 天然靠 `filter: name(regex: '…')` 匹配节点，无枚举 vs 正则之分）；
+- `tun`（honk 是 eBPF 透明代理）；
+- `keepalive`（honk 无独立开关）；
+- `full`（本项目的 `full=true` 是给 Clash 加内核参数，honk 侧不适用）；
+- `sniffer`（honk 域名嗅探是 eBPF 层内建）；
+- `regex`（honk 天然靠 `filter: name(regex: '…')` 匹配节点）；
 - 「手动选择」/ `GLOBAL` 组（honk 侧由 `Select` 与 `Final` 分别承担）；
 - AdBlock / SogouInput 代理组（外部 rule-provider 无等价物，路由层直接落到 `block` / `direct`）；
 - Tailscale 节点与 `100.64.0.0/10` 定向分流（honk 无 tailscale outbound）。
@@ -338,9 +333,6 @@ URL hash 里的参数用 `&` 分隔，与 mihomo 侧完全兼容。分三类：*
 
 - 地区组走 `min_moving_avg`（默认，不用写 `grouptype=1`）；
 - 排除 E-Hentai 与微博；
-- LAN 网卡 `eth0`，数据目录 `/var/lib/honk`；
-- Clash 面板口令设为 `mytoken`；
-- 关掉 Doona 面板（`native-api=false`）；
 - 每小时刷一次订阅。
 
 对应的 Sub-Store Override URL：
@@ -349,16 +341,41 @@ URL hash 里的参数用 `&` 分隔，与 mihomo 侧完全兼容。分三类：*
 https://cdn.jsdelivr.net/gh/powerfullz/override-rules/convert-honk.min.js
   #subscription=https%3A%2F%2Fsubstore.example%2Fsadsd%2Fdownload%2Fabc%3Ftarget%3Dxyz
   &exclude=EHentai,Weibo
-  &lan-iface=eth0
-  &data-dir=/var/lib/honk
-  &clash-secret=mytoken
-  &native-api=false
   &sub-interval=3600s
 ```
 
 （示例里的换行只是为了看，实际写在同一行）。
 
-更多细节见 [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md#honk-动态覆写convert-honkjs) 与 [`docs/HOW_TO_CUSTOMISE.md`](docs/HOW_TO_CUSTOMISE.md#自定义-honk-输出)。
+#### system.dae 参考
+
+下面这份 OpenWrt x86 软路由常见的 `system.dae` 可以作为起点，按自己网卡与面板口令调整：
+
+```
+global {
+    wan_interface: auto
+    lan_interface: br-lan            # ip a 查自己的网卡
+    log_level: info
+    dial_mode: domain                # ip / domain / domain+ / domain++ / fallback
+    allow_insecure: false
+    auto_config_kernel_parameter: true
+    data_dir: '/etc/honk'            # OpenWrt /var 是内存盘，放 /etc 才能持久化
+    store_subscribe: true
+    nfqueue_enable: true
+}
+
+experimental {
+    native_api {
+        enabled: true
+        listen: '192.168.1.1:9527'   # 按你路由器 LAN IP 改；仅本机访问用 127.0.0.1:9527
+        password_auth: true
+        allow_anonymous_loopback: false
+        config_write: true
+        ui: '/usr/share/doona'       # 或 embedded，需 full 构建变体
+    }
+}
+```
+
+更多 honk 侧字段含义见 [daeuniverse/honk 配置指南](https://github.com/daeuniverse/honk/blob/main/doc/zh/configuration.md)。本项目侧的完整语义映射与实现细节见 [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md#honk-动态覆写convert-honkjs) 与 [`docs/HOW_TO_CUSTOMISE.md`](docs/HOW_TO_CUSTOMISE.md#自定义-honk-输出)。
 
 ### 如何自定义与贡献
 

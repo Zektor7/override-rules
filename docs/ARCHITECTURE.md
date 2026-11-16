@@ -98,7 +98,7 @@ flowchart TD
 | `src/types/honk.ts` | honk 构建层需要的类型 | `HonkScriptArgs`, `HonkRuntimeOptions`, `HonkBuildContext`, `InlineRuleSetMap`, `HonkGroupSpec` |
 | `src/args/honk-schema.ts` | honk 独有参数的默认值 | `HONK_ARG_DEFAULTS` |
 | `src/args/honk-parse.ts` | honk 独有参数的解析 | `buildHonkRuntimeOptions()` |
-| `src/builders/honk/` | honk `config.dae` 文本构建层 | `filter.ts` 生成 filter 表达式；`groups/rules/dns/assets/global/experimental.ts` 分段渲染；`render.ts` 拼装 banner + 各段 |
+| `src/builders/honk/` | honk `config.dae` 文本构建层 | `filter.ts` 生成 filter 表达式；`groups/rules/dns/assets.ts` 分段渲染；`render.ts` 拼装 banner + `include { system.dae }` + 五段策略 |
 | `src/main-honk.ts` | honk 覆写的运行时入口（`convert-honk.js` / `convert-honk.min.js`） | `globalThis.main = (config) => string`；同时导出 `runHonkEntry()` 供测试直接调用 |
 | `src/generated/honk-rulesets.ts` | 自维护 `ruleset/*.list` 的编译期内联产物 | `INLINED_HONK_RULESETS`；由 `scripts/generate-honk-rulesets.mjs` 写入，已提交到 git |
 | `scripts/generate-honk-rulesets.mjs` | 将 `ruleset/*.list` 转写为 `src/generated/honk-rulesets.ts` | `npm run generate:honk-rulesets`；`npm run build` 会自动先跑一次 |
@@ -253,6 +253,22 @@ YAML 模式的特点：
 
 与 mihomo 分支共享：参数解析 `buildFeatureFlags` / 节点分类 `analyzeNodes` / 国家与服务目录 `catalog/countries` / `catalog/service-groups` / `catalog/rule-sets` / `catalog/low-cost`；分叉点只在构建层：mihomo 走 `builders/{config,proxy-groups,rules,dns,tun,sniffer,full-config,geox}.ts`，honk 走 `builders/honk/*`。
 
+#### 只输出策略骨架，不输出部署层
+
+honk 的 `config.dae` 一共八段：`global` / `subscription` / `node` / `group` / `dns` / `routing` / `assets` / `experimental`。本项目只写**策略相关的五段**（`subscription` / `group` / `dns` / `routing` / `assets`），`global` 与 `experimental` 属于部署层（网卡、数据目录、面板监听地址与口令），**交给同目录下的 `system.dae`**，本项目的 `config.dae` 顶部固定写：
+
+```
+include {
+    system.dae
+}
+```
+
+honk 会把 `system.dae` 里的段与本体自动合并（参见 [honk 配置指南](https://github.com/daeuniverse/honk/blob/main/doc/zh/configuration.md#使用-include-拆分配置)：后出现的标量 key 覆盖先前的，集合条目按顺序追加）。好处：
+
+- **部署层变更不需要重跑本项目**：换网卡、改面板口令、开/关 API 都不影响策略骨架，直接改 `system.dae` + `SIGHUP`；
+- **多设备共用同一份策略**：同一个 Sub-Store Override URL 可以给 OpenWrt 主路由与 x86 旁路由共同拉，各自的 `system.dae` 写自己环境的网卡与面板地址；
+- **luqi-app-honk 等托管面板兼容**：OpenWrt 上 luci 面板依赖 `system.dae` 存在来写监听端口与 API 开关，本项目不写 `global/experimental` 就不会冲突。
+
 #### 三段式参数体系
 
 honk 入口的 `$arguments` 同时包含三类参数，互不干扰：
@@ -260,8 +276,8 @@ honk 入口的 `$arguments` 同时包含三类参数，互不干扰：
 | 类别 | 字段 | 解析器 | 默认值 |
 | --- | --- | --- | --- |
 | 与 mihomo **同义** | `grouptype` / `threshold` / `ipv6` / `quic` / `adblock` / `include` / `exclude` / `prefer` | `args/parse.ts::buildFeatureFlags()` | 与 mihomo 分支一致，`args/schema.ts::ARG_DEFAULTS` |
-| **honk 独有** | `subscription` / `sub-*` / `lan-iface` / `dns-*` / `native-*` / `clash-*` / `data-dir` 等 | `args/honk-parse.ts::buildHonkRuntimeOptions()` | `args/honk-schema.ts::HONK_ARG_DEFAULTS` |
-| **honk 会忽略** | `landing` / `fakeip` / `tun` / `sniffer` / `keepalive` / `full` / `regex` | 不读取 | — |
+| **honk 独有（策略）** | `subscription` / `sub-*` / `dns-*` | `args/honk-parse.ts::buildHonkRuntimeOptions()` | `args/honk-schema.ts::HONK_ARG_DEFAULTS` |
+| **honk 会忽略 / 已迁到 `system.dae`** | `landing` / `fakeip` / `tun` / `sniffer` / `keepalive` / `full` / `regex`（本身无对应）；`lan-iface` / `wan-iface` / `dial-mode` / `data-dir` / `log-level` / `native-*` / `clash-*`（已迁到 `system.dae`） | 不读取 | — |
 
 两个解析器都只取自己关心的键，多余字段自然丢弃；honk 入口把 `rawArgs` 同时传给 `buildFeatureFlags` 与 `buildHonkRuntimeOptions`，确保两侧行为一致。完整的 honk 参数列表与默认值见 [`README.md`](../README.md#honk-支持的传参)。
 

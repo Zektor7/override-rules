@@ -160,7 +160,9 @@ export const PROJECT_URL = `${CDN_URL}/gh/Zektor7/override-rules@main`;
 
 ## 自定义 honk 输出
 
-honk 入口 `src/main-honk.ts` 与构建层 `src/builders/honk/` 产出 honk（dae 语法）专用的 `config.dae`，与 mihomo 分支共享 `src/catalog/countries.ts` / `src/catalog/service-groups.ts` / `src/catalog/rule-sets.ts` / `src/args/parse.ts`；honk 自己的映射层在 `src/catalog/honk-groups.ts`，独有参数的默认值在 `src/args/honk-schema.ts`。新增一个组或地区时，除了改上游的 catalog，还要同步补 honk 侧映射，否则产物会拿到 `Region` 占位组名。
+honk 入口 `src/main-honk.ts` 与构建层 `src/builders/honk/` 产出 honk（dae 语法）的**策略骨架**（`subscription` / `group` / `dns` / `routing` / `assets` 五段），与 mihomo 分支共享 `src/catalog/countries.ts` / `src/catalog/service-groups.ts` / `src/catalog/rule-sets.ts` / `src/args/parse.ts`；honk 自己的映射层在 `src/catalog/honk-groups.ts`，策略参数的默认值在 `src/args/honk-schema.ts`。新增一个组或地区时，除了改上游的 catalog，还要同步补 honk 侧映射，否则产物会拿到 `Region` 占位组名。
+
+`global {}` 与 `experimental {}` 属于部署层（网卡、数据目录、面板监听与口令），本项目不会写它们；产物顶部固定 `include { system.dae }`，honk 自动从同目录下的 `system.dae` 读取。**部署层变更不需要改本项目代码**，写你自己的 `system.dae` 就行（参考 [`README.md`](../README.md#systemdae-参考)）。
 
 ### 新增代理组时
 
@@ -172,7 +174,7 @@ honk 入口 `src/main-honk.ts` 与构建层 `src/builders/honk/` 产出 honk（d
 
 在 `src/catalog/countries.ts` 的 `countriesMeta` 新增一条后，到 `src/catalog/honk-groups.ts` 内部的 `HONK_COUNTRY_CODES` 补一个 ASCII 组名（推荐 ISO 3166 alpha-2）。`tests/catalog/honk-groups.test.ts` 会调用 `assertHonkCountryMappings()` 验证两边一致，忘记补时 `npm test` 会直接报错。
 
-### 新增 honk 独有参数时
+### 新增 honk 独有策略参数时
 
 1. 在 `src/types/honk.ts::HonkScriptArgs` 里声明 URL 参数字段（字符串形式）；
 2. 在 `src/types/honk.ts::HonkRuntimeOptions` 里声明解析后的强类型字段；
@@ -180,6 +182,8 @@ honk 入口 `src/main-honk.ts` 与构建层 `src/builders/honk/` 产出 honk（d
 4. 在 `src/args/honk-parse.ts::buildHonkRuntimeOptions()` 里接入（字符串/布尔/URL 编码分别用 `readString` / `readBool` / `readSubscriptionUrl`）；
 5. 在对应 `src/builders/honk/<段>.ts` 里从 `opts` 读取并写入输出；
 6. 补上 `tests/args/honk-parse.test.ts` 与相关 `tests/builders/honk/*.test.ts` 的断言。
+
+**仅当新字段属于“策略”时才加到本项目**：与上游订阅/域名分流/DNS 上游相关的才是策略（比如新增一个 `dns-local-exit`）；与网卡、面板口令、内核参数相关的属于部署层，写到 `system.dae` 里就行，不要往本项目里加。
 
 ### 新增项目自维护的 ruleset 时
 
@@ -198,7 +202,8 @@ npm run build && node -e "
 "
 ```
 
-honk 侧无对应概念的字段（`landing` / `fakeip` / `tun` / `sniffer` / `keepalive` / `manual` / `GLOBAL`）不产生输出，修改它们不会影响 `config.dae` 产物。honk 与 Clash 的完整语义映射表见 [`ARCHITECTURE.md`](ARCHITECTURE.md#clash--honk-的语义映射)。
+honk 侧无对应概念的字段（`landing` / `fakeip` / `tun` / `sniffer` / `keepalive` / `manual` / `GLOBAL`）与已迁到 `system.dae` 的部署字段（`lan-iface` / `data-dir` / `native-*` / `clash-*` 等）均不产生输出，传不传都一样。honk 与 Clash 的完整语义映射表见 [`ARCHITECTURE.md`](ARCHITECTURE.md#clash--honk-的语义映射)。
+
 
 ## 构建并使用你的定制脚本
 

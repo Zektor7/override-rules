@@ -25,19 +25,18 @@ function render(args: Record<string, string> = {}, inline: InlineRuleSetMap = {}
 }
 
 describe("renderHonkConfig 段落顺序", () => {
-    it("按 banner → subscription → group → dns → routing → global → assets → experimental 顺序", () => {
+    it("按 banner → include → subscription → group → dns → routing → assets 顺序", () => {
         const text = render();
         const idx = (needle: string) => text.indexOf(needle);
 
         const positions: [string, number][] = [
             ["banner", idx("# 由 override-rules 的 honk 覆写动态生成")],
+            ["include", idx("include {")],
             ["subscription", idx("subscription {")],
             ["group", idx("\ngroup {")],
             ["dns", idx("\ndns {")],
             ["routing", idx("\nrouting {")],
-            ["global", idx("\nglobal {")],
             ["assets", idx("\nassets {")],
-            ["experimental", idx("\nexperimental {")],
         ];
         for (const [name, position] of positions) {
             assert.ok(position >= 0, `${name} 缺失`);
@@ -50,6 +49,12 @@ describe("renderHonkConfig 段落顺序", () => {
         }
     });
 
+    it("不再输出 global 与 experimental 段（交给 system.dae）", () => {
+        const text = render();
+        assert.ok(!/^global \{/m.test(text), "config.dae 不应再包含 global {} 段");
+        assert.ok(!/^experimental \{/m.test(text), "config.dae 不应再包含 experimental {} 段");
+    });
+
     it("banner 参数指纹反映 flags 与 opts 关键值", () => {
         const text = render({
             grouptype: "2",
@@ -57,18 +62,12 @@ describe("renderHonkConfig 段落顺序", () => {
             ipv6: "true",
             quic: "true",
             subscription: "https://sub.example/token",
-            "lan-iface": "eth0",
-            "data-dir": "/var/lib/honk",
-            "dial-mode": "ip",
         });
         assert.match(text, /grouptype=2 \(loadbalance\)/);
         assert.match(text, /adblock=0/);
         assert.match(text, /ipv6=on/);
         assert.match(text, /quic=on/);
         assert.match(text, /subscription=https:\/\/sub\.example\/token/);
-        assert.match(text, /lan-iface=eth0/);
-        assert.match(text, /data-dir=\/var\/lib\/honk/);
-        assert.match(text, /dial-mode=ip/);
     });
 
     it("banner 显示 include/exclude/prefer 参数", () => {
@@ -82,6 +81,18 @@ describe("renderHonkConfig 段落顺序", () => {
         assert.match(text, /landing \/ dialer-proxy 链式代理/);
         assert.match(text, /Tailscale outbound/);
         assert.match(text, /fake-ip、sniffer、tcp-keepalive、tun/);
+    });
+
+    it("banner 明确说明 global / experimental 走 system.dae", () => {
+        const text = render();
+        assert.match(text, /global 与 experimental 通过 include 从同目录下的 system\.dae 加载/);
+    });
+});
+
+describe("include 段", () => {
+    it("默认从同目录下的 system.dae 加载 global 与 experimental", () => {
+        const text = render();
+        assert.match(text, /^include \{\n {4}system\.dae\n\}$/m);
     });
 });
 
@@ -121,7 +132,7 @@ describe("subscription 段", () => {
     });
 });
 
-describe("dns / global / experimental 段参数化", () => {
+describe("dns 段", () => {
     it("dns 段随 ipv6 参数变化", () => {
         assert.match(render({ ipv6: "false" }), /qtype\(aaaa\) -> reject/);
         assert.ok(!render({ ipv6: "true" }).includes("qtype(aaaa) -> reject"));
@@ -151,43 +162,9 @@ describe("dns / global / experimental 段参数化", () => {
         assert.match(text, /default: 'udp:\/\/119\.29\.29\.29:53' -> direct/);
         assert.match(text, /remote: 'https:\/\/dns\.google\/dns-query' -> Auto/);
     });
-
-    it("global 段反映 lan-iface / dial-mode / data-dir / log-level 参数", () => {
-        const text = render({
-            "lan-iface": "eth0",
-            "dial-mode": "ip",
-            "data-dir": "/var/lib/honk",
-            "log-level": "debug",
-            "allow-insecure": "true",
-        });
-        assert.match(text, /lan_interface: eth0/);
-        assert.match(text, /dial_mode: ip/);
-        assert.match(text, /data_dir: '\/var\/lib\/honk'/);
-        assert.match(text, /log_level: debug/);
-        assert.match(text, /allow_insecure: true/);
-    });
-
-    it("experimental 段默认同时输出 native_api 与 clash_api", () => {
-        const text = render();
-        assert.match(text, /native_api \{[\s\S]*listen: '0\.0\.0\.0:9527'/);
-        assert.match(text, /clash_api \{[\s\S]*external_controller: '0\.0\.0\.0:9090'/);
-    });
-
-    it("native-api=false 时不输出 native_api 块；clash-api 同理", () => {
-        const text = render({ "native-api": "false", "clash-api": "false" });
-        assert.ok(!text.includes("native_api {"), "native-api=false 时不应输出 native_api 块");
-        assert.ok(!text.includes("clash_api {"), "clash-api=false 时不应输出 clash_api 块");
-    });
-
-    it("clash-secret 未设置时给出 TODO 注释", () => {
-        assert.match(render(), /secret: '' # TODO/);
-        const withSecret = render({ "clash-secret": "abc123" });
-        assert.ok(!/secret: '[^']*' # TODO/.test(withSecret), "设置后 secret 行不应带 TODO");
-        assert.match(withSecret, /secret: 'abc123'/);
-    });
 });
 
-describe("routing 段参数化", () => {
+describe("routing 段", () => {
     it("routing 段包含自维护 ruleset 的内联域名", () => {
         const inline: InlineRuleSetMap = {
             PT: ["DOMAIN-SUFFIX,byr.pt", "DOMAIN-SUFFIX,m-team.cc"],
@@ -205,7 +182,11 @@ describe("routing 段参数化", () => {
 
 describe("产物完整性", () => {
     it("文件以换行结尾且大括号数量平衡", () => {
-        const text = render({ prefer: "香港.*01", adblock: "1", subscription: "https://x/y" });
+        const text = render({
+            prefer: "香港.*01",
+            adblock: "1",
+            subscription: "https://x/y",
+        });
         assert.ok(text.endsWith("\n"));
         const opens = (text.match(/\{/g) ?? []).length;
         const closes = (text.match(/\}/g) ?? []).length;

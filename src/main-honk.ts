@@ -4,7 +4,11 @@ https://github.com/powerfullz/override-rules
 
 用法：把 convert-honk.min.js 作为 Sub-Store 覆写绑定到目标订阅，客户端 GET 该订阅
 的 download URL 时，Sub-Store 会把 main(config) 返回的字符串原样作为响应体吐出，
-拿到就是一份可直接放进 /etc/honk/config.dae 的完整配置。
+拿到就是一份可直接放进 /etc/honk/config.dae 的策略骨架。
+
+产物只包含策略段：subscription / group / dns / routing / assets；`global {}` 与
+`experimental {}` 属于机器/部署参数，交给同目录下的 `system.dae`，本文件顶部固定
+输出 `include { system.dae }` 引入。这样部署侧改网卡或面板口令不需要动本项目产物。
 
 与 mihomo 分支共享的参数（含义完全一致，此处只列名字，详义见 convert.min.js banner）：
 - grouptype: 地区代理组类型（0=select 手动, 1=min_moving_avg 自动测速, 2=loadbalance 负载均衡，默认 1）
@@ -23,30 +27,18 @@ honk 独有参数：
 - sub-route: 拉订阅的出口（`direct` 或组名），默认 `direct`
 - sub-cache: 是否缓存订阅正文到本地状态库，默认 true
 - sub-ua: 拉订阅的 User-Agent，默认 `clash.meta/1.19.30`
-- lan-iface: honk global.lan_interface，默认 `br-lan`
-- wan-iface: honk global.wan_interface，默认 `auto`
-- dial-mode: honk global.dial_mode，默认 `domain`
-- data-dir: honk global.data_dir，默认 `/etc/honk`
-- log-level: honk global.log_level，默认 `info`
-- allow-insecure: honk global.allow_insecure，默认 false
-- store-subscribe: honk global.store_subscribe，默认 true
-- nfqueue: honk global.nfqueue_enable，默认 true
-- auto-kernel: honk global.auto_config_kernel_parameter，默认 true
 - dns-default: honk dns.upstream.default 的 URL，默认阿里 DoH
 - dns-remote: honk dns.upstream.remote 的 URL，默认 Cloudflare DoH
 - dns-remote-exit: remote 绑定的出口组名，默认 `Select`
 - dns-client-subnet: honk dns.client_subnet，默认 `auto`
-- native-api: 是否输出 experimental.native_api {}，默认 true
-- native-listen: native_api.listen，默认 `0.0.0.0:9527`
-- native-ui: native_api.ui，默认 `embedded`
-- clash-api: 是否输出 experimental.clash_api {}，默认 true
-- clash-controller: clash_api.external_controller，默认 `0.0.0.0:9090`
-- clash-ui: clash_api.external_ui，默认 `zashboard`
-- clash-secret: clash_api.secret，默认空（生产请设置）
 
 honk 无对应概念、显式忽略的 mihomo 参数：
 - landing / 前置代理链（dialer-proxy）
 - fakeip / sniffer / tun / keepalive / full / regex / manual / GLOBAL / tailscale
+
+honk 侧交由 system.dae 处理的段（本覆写不再输出）：
+- global {}：网卡、dial_mode、data_dir、log_level、内核参数等部署项
+- experimental {}：native_api / clash_api / cache_file 面板与持久化配置
 
 源码位于 `src/`，入口为 `src/main-honk.ts`。
 */

@@ -3,12 +3,16 @@
  *
  * honk 是 dae 的 Rust + eBPF 重写（<https://github.com/daeuniverse/honk>），
  * 配置语法沿用 dae（`.dae` 文件），与 Clash/Mihomo 的 YAML 存在语义鸿沟：
- * - 组只能靠 `filter: name(regex: '…')` 命中订阅节点，不支持引用其他组；
+ * - 组只能靠 `filter: name(regex: '…')` 命中订阅节点，或用 `filter: group(...)` 嵌套；
  * - 没有 dialer-proxy 链式代理、FakeIP、TUN、Sniffer、Tailscale outbound；
  * - 组名只允许 `[A-Za-z0-9]`。
  *
- * 因此 honk 构建层单独定义上下文与产物形态，与 Clash 的 `GroupBuildContext` 平行。
- * honk 覆写以 `main(config) => string` 形式返回 `config.dae` 文本，交给 Sub-Store 原样吐出。
+ * 本项目只负责 honk 配置里的**策略骨架**（subscription / group / dns / routing / assets），
+ * `global {}` 与 `experimental {}` 属于机器/部署参数，交给用户的 `system.dae`，
+ * 生成的 `config.dae` 顶部固定 `include { system.dae }`。
+ *
+ * honk 覆写以 `main(config) => string` 形式返回 `config.dae` 文本，
+ * 交给 Sub-Store 原样吐出。
  */
 
 import type { FeatureFlags } from "./args";
@@ -35,25 +39,6 @@ export interface HonkScriptArgs {
     /** 拉取订阅的 User-Agent。默认 `clash.meta/1.19.30`。 */
     "sub-ua"?: string;
 
-    /** honk global.lan_interface。默认 `br-lan`。 */
-    "lan-iface"?: string;
-    /** honk global.wan_interface。默认 `auto`。 */
-    "wan-iface"?: string;
-    /** honk global.dial_mode：`domain` / `ip` / `domain_strict` / `fallback`。默认 `domain`。 */
-    "dial-mode"?: string;
-    /** honk global.data_dir。默认 `/etc/honk`。 */
-    "data-dir"?: string;
-    /** honk global.log_level：`fatal`/`error`/`warn`/`info`/`debug`/`trace`。默认 `info`。 */
-    "log-level"?: string;
-    /** honk global.allow_insecure。默认 `false`。 */
-    "allow-insecure"?: string;
-    /** honk global.store_subscribe。默认 `true`。 */
-    "store-subscribe"?: string;
-    /** honk global.nfqueue_enable。默认 `true`。 */
-    nfqueue?: string;
-    /** honk global.auto_config_kernel_parameter。默认 `true`。 */
-    "auto-kernel"?: string;
-
     /** honk dns.upstream.default 的 URL。默认阿里 DoH。 */
     "dns-default"?: string;
     /** honk dns.upstream.remote 的 URL。默认 Cloudflare DoH。 */
@@ -62,21 +47,6 @@ export interface HonkScriptArgs {
     "dns-remote-exit"?: string;
     /** honk dns.client_subnet：`auto` / `off` / `<ipv4/24>`。默认 `auto`。 */
     "dns-client-subnet"?: string;
-
-    /** 是否输出 `experimental.native_api {}`。默认 `true`。 */
-    "native-api"?: string;
-    /** native_api.listen。默认 `0.0.0.0:9527`。 */
-    "native-listen"?: string;
-    /** native_api.ui：`embedded` / `embedded-lite` / 一个磁盘路径。默认 `embedded`。 */
-    "native-ui"?: string;
-    /** 是否输出 `experimental.clash_api {}`。默认 `true`。 */
-    "clash-api"?: string;
-    /** clash_api.external_controller。默认 `0.0.0.0:9090`。 */
-    "clash-controller"?: string;
-    /** clash_api.external_ui：`zashboard` / 磁盘路径。默认 `zashboard`。 */
-    "clash-ui"?: string;
-    /** clash_api.secret。默认空串，面板无鉴权；生产请设置。 */
-    "clash-secret"?: string;
 }
 
 /** 解析后的 honk 运行时参数集合，构建层只关心这里的强类型字段。 */
@@ -88,28 +58,10 @@ export interface HonkRuntimeOptions {
     subscriptionCache: boolean;
     subscriptionUa: string;
 
-    lanInterface: string;
-    wanInterface: string;
-    dialMode: string;
-    dataDir: string;
-    logLevel: string;
-    allowInsecure: boolean;
-    storeSubscribe: boolean;
-    nfqueueEnable: boolean;
-    autoConfigKernelParameter: boolean;
-
     dnsDefaultUpstream: string;
     dnsRemoteUpstream: string;
     dnsRemoteExit: string;
     dnsClientSubnet: string;
-
-    enableNativeApi: boolean;
-    nativeApiListen: string;
-    nativeApiUi: string;
-    enableClashApi: boolean;
-    clashApiController: string;
-    clashApiUi: string;
-    clashApiSecret: string;
 }
 
 /** honk 构建上下文：合并 mihomo 分支共用的 `flags`/`nodes` 与 honk 独有的 `opts`。 */
@@ -125,8 +77,8 @@ export interface HonkBuildContext {
  * 只有 `ruleset/*.list` 这类项目自带的文件会被内联；外部 rule-provider 通过
  * geosite 近似或跳过（详见 `builders/honk/rules.ts` 内的映射表）。
  *
- * 运行时覆写没有本地文件系统，`main-honk.ts` 会传入一个空对象，
- * 对应的 `RULE-SET` 分支自动退化到 geosite 近似或跳过并加注释。
+ * 运行时覆写没有文件系统访问，`src/main-honk.ts` 从 `src/generated/honk-rulesets.ts`
+ * 读取编译期内联好的内容。
  */
 export type InlineRuleSetMap = Readonly<Record<string, readonly string[]>>;
 

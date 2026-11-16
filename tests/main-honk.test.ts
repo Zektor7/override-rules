@@ -23,9 +23,16 @@ describe("runHonkEntry 契约", () => {
         const result = runHonkEntry(CONFIG, {});
         assert.equal(typeof result, "string");
         assert.match(result, /^# 由 override-rules 的 honk 覆写动态生成/);
-        assert.match(result, /subscription \{[\s\S]*\}/);
+        assert.match(result, /^include \{\n {4}system\.dae\n\}$/m);
+        assert.match(result, /subscription \{[\s\S]*?\}/);
         assert.match(result, /group \{[\s\S]*Final \{/);
         assert.match(result, /routing \{[\s\S]*fallback: Final\s*\}/);
+    });
+
+    it("只输出策略骨架，不含 global / experimental 段", () => {
+        const result = runHonkEntry(CONFIG, {});
+        assert.ok(!/^global \{/m.test(result), "不应包含 global {} 段");
+        assert.ok(!/^experimental \{/m.test(result), "不应包含 experimental {} 段");
     });
 
     it("proxies 缺失时抛错", () => {
@@ -77,5 +84,20 @@ describe("runHonkEntry 契约", () => {
             regex: "false",
         });
         assert.equal(withIgnored, baseline);
+    });
+
+    it("honk 忽略迁移到 system.dae 的部署参数（lan-iface/data-dir/native-* 等）", () => {
+        const baseline = runHonkEntry(CONFIG, {});
+        const withDeploymentArgs = runHonkEntry(CONFIG, {
+            "lan-iface": "eth0",
+            "data-dir": "/var/lib/honk",
+            "native-api": "false",
+            "clash-secret": "hunter2",
+        } as EntryArgs);
+        assert.equal(
+            withDeploymentArgs,
+            baseline,
+            "部署层参数已经从策略层剥离，不应影响 config.dae 输出"
+        );
     });
 });
