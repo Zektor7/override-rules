@@ -22,6 +22,9 @@ https://github.com/powerfullz/override-rules
 
 honk 独有参数（策略层）：
 - subscription: honk 的订阅 URL（URL 编码），会写入 subscription { my_sub: '<URL>' }；honk 按 interval 自动重拉
+- sub-base: SubStore 服务基础地址（host + 后端路径，不含 /download/...）。配合 SubStore 注入的 `$file`
+  自动拼接出订阅下载地址（collection → /download/collection/<name>，subscription → /download/<name>），
+  免去手工传完整 subscription；显式 subscription 仍优先
 - subtag: 订阅 tag 名，默认 `my_sub`
 - sub-interval: 订阅刷新间隔，默认 `86400s`；honk 接受 `30m` / `1h` 等
 - sub-route: 拉订阅的出口（`direct` 或组名），默认 `direct`
@@ -55,11 +58,12 @@ import { buildHonkDae } from "./builders/honk";
 import { INLINED_HONK_RULESETS } from "./generated/honk-rulesets";
 import type { ScriptArgs } from "./types/args";
 import type { ClashConfig } from "./types/clash";
-import type { HonkScriptArgs } from "./types/honk";
+import type { HonkFileContext, HonkScriptArgs } from "./types/honk";
 
 type HonkEntryArgs = ScriptArgs & HonkScriptArgs;
 
 declare const $arguments: HonkEntryArgs;
+declare const $file: HonkFileContext | null | undefined;
 
 /** 读取脚本环境传入的参数；未检测到时返回空对象以使用默认值。 */
 function readRawArgs(): HonkEntryArgs {
@@ -71,17 +75,39 @@ function readRawArgs(): HonkEntryArgs {
 }
 
 /**
+ * 读取 SubStore 文件处理作用域里的 `$file`（含 `sourceType` / `sourceName`）。
+ *
+ * `$file` 只在 SubStore 的 `ScriptOperator.nodeFunc` 里以局部变量注入；单测或
+ * 非文件场景下不存在。用 `typeof` 守卫（对未声明标识符也安全）避免引用错误。
+ */
+function readFileContext(): HonkFileContext | null {
+    try {
+        if (typeof $file !== "undefined" && $file != null) {
+            return $file;
+        }
+    } catch {
+        // 沙箱无此变量时忽略
+    }
+    return null;
+}
+
+/**
  * honk 覆写的可测试入口：与 bundle 入口 `main()` 同逻辑，只是把 `$arguments` 抽成参数。
  * 单元测试直接调用它避免污染 `globalThis`；bundle 打包后 esbuild 会 tree-shake
  * 掉 `export` 关键字，不影响产物。
+ * @param fileContext - SubStore 暴露的 `$file`（`sourceType`/`sourceName`）；非 SubStore 环境传空
  */
-export function runHonkEntry(config: ClashConfig, rawArgs: HonkEntryArgs): string {
+export function runHonkEntry(
+    config: ClashConfig,
+    rawArgs: HonkEntryArgs,
+    fileContext: HonkFileContext | null = null
+): string {
     if (!config.proxies || !Array.isArray(config.proxies)) {
         throw new Error("[powerfullz 的 honk 覆写] 错误：Clash 配置中缺少有效的 proxies 字段");
     }
 
     const flags = buildFeatureFlags(rawArgs);
-    const opts = buildHonkRuntimeOptions(rawArgs, flags);
+    const opts = buildHonkRuntimeOptions(rawArgs, flags, fileContext);
     const nodes = analyzeNodes(config.proxies, flags.countryThreshold, flags.preferPatterns);
 
     return buildHonkDae({ flags, opts, nodes }, INLINED_HONK_RULESETS);
@@ -93,7 +119,7 @@ export function runHonkEntry(config: ClashConfig, rawArgs: HonkEntryArgs): strin
  * @param config - 上游订阅配置（Sub-Store 解析后的 Clash 对象）
  */
 function main(config: ClashConfig): string {
-    return runHonkEntry(config, readRawArgs());
+    return runHonkEntry(config, readRawArgs(), readFileContext());
 }
 
 (globalThis as Record<string, unknown>).main = main;

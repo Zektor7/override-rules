@@ -116,6 +116,8 @@ export default [
             "@typescript-eslint/no-unnecessary-condition": "off",
             "@typescript-eslint/no-base-to-string": "off",
             "sonarjs/no-alphabetical-sort": "off",
+            // 测试用 LAN 内网 SubStore 地址（如 nip.io → 192.168.x.x），http 是刻意为之
+            "sonarjs/no-clear-text-protocols": "off",
         },
     },
 

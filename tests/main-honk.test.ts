@@ -119,4 +119,21 @@ describe("runHonkEntry 契约", () => {
             "部署层参数已经从策略层剥离，不应影响 config.dae 输出"
         );
     });
+
+    it("sub-base + $file 自动关联订阅连接写入 subscription 段", () => {
+        const result = runHonkEntry(
+            CONFIG,
+            { "sub-base": "http://sub.192-168-1-184.nip.io/tdtVuezFG" },
+            { sourceType: "collection", sourceName: "full" }
+        );
+        assert.match(
+            result,
+            /my_sub: 'http:\/\/sub\.192-168-1-184\.nip\.io\/tdtVuezFG\/download\/collection\/full'/
+        );
+        // banner 参数指纹同步反映自动解析出的订阅地址
+        assert.match(
+            result,
+            /subscription=http:\/\/sub\.192-168-1-184\.nip\.io\/tdtVuezFG\/download\/collection\/full/
+        );
+    });
 });

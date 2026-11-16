@@ -29,6 +29,12 @@ import type { NodeAnalysis } from "./proxy";
 export interface HonkScriptArgs {
     /** 订阅 URL：honk 会按 interval 定时拉取；建议做 URL 编码。 */
     subscription?: string;
+    /**
+     * SubStore 服务的基础地址（host + 后端路径，不含 `/download/...`）。
+     * 与 SubStore 注入的 `$file`（sourceType/sourceName）结合自动拼接订阅下载地址；
+     * 显式 `subscription` 仍优先。
+     */
+    "sub-base"?: string;
     /** 订阅 tag 名，honk 的 `subtag(...)` 过滤器按此匹配。默认 `my_sub`。 */
     subtag?: string;
     /** 订阅刷新间隔（honk 接受 `86400s` / `1h` / `30m` 等）。默认 `86400s`。 */
@@ -62,6 +68,23 @@ export interface HonkScriptArgs {
     "dns-remote-exit"?: string;
     /** honk dns.client_subnet：`auto` / `off` / `<ipv4/24>`。默认 `auto`。 */
     "dns-client-subnet"?: string;
+}
+
+/**
+ * SubStore Script Operator 在文件处理作用域里注入的 `$file` 对象。
+ *
+ * 覆写脚本以 `main(config)` 形式运行时，SubStore 会把当前文件（`mihomoConfig` /
+ * `mihomoProfile`）的元数据以局部变量 `$file` 注入到脚本作用域（见 SubStore
+ * `ScriptOperator` 的 `nodeFunc`：`let { $content, $files, $options, $file } = input`）。
+ * 本接口只取自动关联订阅连接所需的字段。
+ */
+export interface HonkFileContext {
+    /** 文件类型：`mihomoConfig` / `mihomoProfile` 等。 */
+    type?: string;
+    /** 文件来源类型：`subscription` / `collection` / `local` / `remote` / `none`。 */
+    sourceType?: string;
+    /** 文件来源名称（单条订阅名或组合订阅名）。 */
+    sourceName?: string;
 }
 
 /** 解析后的 honk 运行时参数集合，构建层只关心这里的强类型字段。 */

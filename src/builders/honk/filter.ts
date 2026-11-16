@@ -15,7 +15,7 @@ import { LOW_COST_NODE_MATCHER } from "../../catalog/low-cost";
  * 这类条目通常在订阅里以「剩余流量」「到期时间」「官网」等出现，
  * 若不排除会让 Select/Auto/Final 组误把「官网链接」当作可用节点。
  */
-export const UTILITY_NODE_EXCLUDE =
+const UTILITY_NODE_EXCLUDE =
     "官网|剩余|流量|套餐|免费|订阅|到期时间|直连|Expire Date|Traffic|ExpireDate|Expire|Official|Announcement|Notice|登录|充值";
 
 /** 「匹配全部订阅节点，但排除机场元信息条目」的通用 filter；用于 Select/Auto/Fallback/Final。 */

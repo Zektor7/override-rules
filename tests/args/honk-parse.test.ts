@@ -4,7 +4,7 @@ import { describe, it } from "node:test";
 import { buildFeatureFlags } from "../../src/args/parse";
 import { buildHonkRuntimeOptions } from "../../src/args/honk-parse";
 import { HONK_ARG_DEFAULTS } from "../../src/args/honk-schema";
-import type { HonkScriptArgs } from "../../src/types/honk";
+import type { HonkFileContext, HonkScriptArgs } from "../../src/types/honk";
 import type { ScriptArgs } from "../../src/types/args";
 
 type Args = ScriptArgs & HonkScriptArgs;
@@ -176,5 +176,77 @@ describe("buildHonkRuntimeOptions 订阅与 DNS", () => {
         assert.equal(opts.subscriptionUrl, HONK_ARG_DEFAULTS.subscriptionUrl);
         assert.ok(!("lanInterface" in opts));
         assert.ok(!("clashApiSecret" in opts));
+    });
+});
+
+describe("buildHonkRuntimeOptions 订阅连接自动关联（sub-base + $file）", () => {
+    const BASE = "http://sub.192-168-1-184.nip.io/tdtVuezFG";
+
+    function parseWithFile(args: Args, fileContext: HonkFileContext | null) {
+        const flags = buildFeatureFlags(args);
+        return buildHonkRuntimeOptions(args, flags, fileContext);
+    }
+
+    it("collection 来源自动拼出 /download/collection/<name>", () => {
+        const opts = parseWithFile(
+            { "sub-base": BASE },
+            {
+                sourceType: "collection",
+                sourceName: "full",
+            }
+        );
+        assert.equal(opts.subscriptionUrl, `${BASE}/download/collection/full`);
+    });
+
+    it("subscription 来源自动拼出 /download/<name>", () => {
+        const opts = parseWithFile(
+            { "sub-base": BASE },
+            {
+                sourceType: "subscription",
+                sourceName: "sub",
+            }
+        );
+        assert.equal(opts.subscriptionUrl, `${BASE}/download/sub`);
+    });
+
+    it("显式 subscription 优先于 sub-base 自动拼接", () => {
+        const opts = parseWithFile(
+            { subscription: "https://explicit.example/token", "sub-base": BASE },
+            { sourceType: "collection", sourceName: "full" }
+        );
+        assert.equal(opts.subscriptionUrl, "https://explicit.example/token");
+    });
+
+    it("只有 sub-base、缺 $file 时回退占位 URL", () => {
+        assert.equal(
+            parseWithFile({ "sub-base": BASE }, null).subscriptionUrl,
+            HONK_ARG_DEFAULTS.subscriptionUrl
+        );
+    });
+
+    it("只有 $file、缺 sub-base 时回退占位 URL", () => {
+        assert.equal(
+            parseWithFile({}, { sourceType: "collection", sourceName: "full" }).subscriptionUrl,
+            HONK_ARG_DEFAULTS.subscriptionUrl
+        );
+    });
+
+    it("非可重拉来源（local）不自动关联", () => {
+        assert.equal(
+            parseWithFile({ "sub-base": BASE }, { sourceType: "local", sourceName: "x" })
+                .subscriptionUrl,
+            HONK_ARG_DEFAULTS.subscriptionUrl
+        );
+    });
+
+    it("sub-base 尾部多余斜杠会被规整", () => {
+        const opts = parseWithFile(
+            { "sub-base": `${BASE}/` },
+            {
+                sourceType: "collection",
+                sourceName: "full",
+            }
+        );
+        assert.equal(opts.subscriptionUrl, `${BASE}/download/collection/full`);
     });
 });

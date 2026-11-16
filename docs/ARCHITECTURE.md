@@ -281,6 +281,16 @@ honk 入口的 `$arguments` 同时包含三类参数，互不干扰：
 
 两个解析器都只取自己关心的键，多余字段自然丢弃；honk 入口先跑 `buildFeatureFlags` 得到 `flags`，再把 `flags` 一并传给 `buildHonkRuntimeOptions(args, flags)`，用于 `#policy` 缺省时回退到 `HONK_POLICIES[flags.groupType]`（默认 grouptype=1 → `score`）。完整的 honk 参数列表与默认值见 [`README.md`](../README.md#honk-支持的传参)。
 
+#### 订阅连接自动关联（`sub-base` + `$file`）
+
+honk 没有 rule-provider，节点更新靠 `subscription {}` 里的 URL 定时重拉；手动传完整 `#subscription=<url>` 又要在 SubStore 里复制一份下载地址，改 URL 后容易忘了同步。因此 honk 入口在 `subscription` 之外额外支持 `sub-base`：
+
+- SubStore 的 `ScriptOperator` 在文件处理作用域（`nodeFunc` 的 `let { $content, $files, $options, $file } = input`）会把当前文件元数据以局部变量 `$file` 注入到脚本作用域，其中 `$file.sourceType`（`collection` / `subscription` / `local` / `remote` / `none`）与 `$file.sourceName`（订阅名/组合订阅名）可用于反推「这份覆写绑在哪份来源上」；
+- `src/main-honk.ts` 通过 `typeof $file !== "undefined" && $file != null` 守卫安全读取（单测与非文件场景不存在该变量，`typeof` 不抛错），并把 `fileContext` 透传给 `buildHonkRuntimeOptions(args, flags, fileContext)`；
+- `resolveSubscriptionUrl` 按优先级取最终订阅 URL：显式 `#subscription=` → `#sub-base=` 拼接 `$file`（collection → `/download/collection/<name>`，subscription → `/download/<name>`；`local`/`remote`/`none` 无独立下载地址则不拼接）→ 占位 URL。
+
+优先级设计保证旧行为不受影响：显式 `subscription` 永远胜出；只有 `sub-base` 与 `$file` 来源信息同时存在时才走自动拼接。
+
 #### 自动选择类组的默认策略：score
 
 honk 官方定义的 `policy` 有五种规范值（`selector` / `urltest` / `loadbalance` / `fallback` / `score`），每种还带若干兼容写法（`fixed(N)` / `min_moving_avg` / `roundrobin` 等），完整白名单见 `catalog/honk-groups.ts::HONK_POLICY_VALUES`。本项目**默认让自动类组（Auto / 地区 / 服务 / LowCost / Final）统一使用 `score`**：

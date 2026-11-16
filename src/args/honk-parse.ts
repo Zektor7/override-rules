@@ -16,7 +16,7 @@ import { HONK_ARG_DEFAULTS } from "./honk-schema";
 import { HONK_POLICIES, isHonkPolicy } from "../catalog/honk-groups";
 import { parseBool, parseNumber } from "../utils/primitives";
 import type { FeatureFlags } from "../types/args";
-import type { HonkRuntimeOptions, HonkScriptArgs } from "../types/honk";
+import type { HonkFileContext, HonkRuntimeOptions, HonkScriptArgs } from "../types/honk";
 
 /** 取字符串：空/仅空白视为未提供，回退到 `fallback`。 */
 function readString(raw: string | undefined, fallback: string): string {
@@ -43,6 +43,68 @@ function readSubscriptionUrl(raw: string | undefined): string {
 function readBool(raw: string | undefined, fallback: boolean): boolean {
     if (raw === undefined) return fallback;
     return parseBool(raw, fallback);
+}
+
+/**
+ * 取 `sub-base` 基础地址：允许 URL 编码，空/未提供回退到空串（表示未启用自动关联）。
+ * 与 `readSubscriptionUrl` 不同，这里用空串做 fallback，避免占位 URL 被误当成基础地址。
+ */
+function readBaseUrl(raw: string | undefined): string {
+    const value = readString(raw, "");
+    if (!value) return value;
+    try {
+        return decodeURIComponent(value);
+    } catch {
+        return value;
+    }
+}
+
+/** 去掉结尾多余斜杠，保证与 `/download/...` 拼接时不出现双斜杠。 */
+function trimTrailingSlashes(base: string): string {
+    let trimmed = base.trim();
+    while (trimmed.endsWith("/")) {
+        trimmed = trimmed.slice(0, -1);
+    }
+    return trimmed;
+}
+
+/**
+ * 拼出 SubStore 的通用下载链接（`.../download/...`），供 honk 周期重拉同一份来源。
+ *
+ * 组合订阅（collection）与单条订阅（subscription）在 SubStore 里的下载路径不同：
+ * collection → `/download/collection/<name>`；subscription → `/download/<name>`。
+ * `local` / `remote` / `none` 等来源没有独立的可重拉地址，返回 `null` 表示无法自动关联。
+ */
+function buildDownloadUrl(base: string, sourceType: string, sourceName: string): string | null {
+    const trimmed = trimTrailingSlashes(base);
+    if (sourceType === "collection") {
+        return `${trimmed}/download/collection/${sourceName}`;
+    }
+    if (sourceType === "subscription") {
+        return `${trimmed}/download/${sourceName}`;
+    }
+    return null;
+}
+
+/**
+ * 解析订阅 URL 的最终取值，优先级：
+ * 1. 显式 `#subscription=`（最高，兼容旧行为）；
+ * 2. `#sub-base=` + SubStore 文件上下文 `$file`（自动拼接下载地址）；
+ * 3. 占位 URL（提示用户手动替换）。
+ */
+function resolveSubscriptionUrl(args: HonkScriptArgs, fileContext: HonkFileContext | null): string {
+    const explicit = readSubscriptionUrl(args.subscription);
+    if (explicit !== HONK_ARG_DEFAULTS.subscriptionUrl) return explicit;
+
+    const base = readBaseUrl(args["sub-base"]);
+    const sourceType = fileContext?.sourceType;
+    const sourceName = fileContext?.sourceName;
+    if (base && sourceType && sourceName) {
+        const url = buildDownloadUrl(base, sourceType, sourceName);
+        if (url) return url;
+    }
+
+    return HONK_ARG_DEFAULTS.subscriptionUrl;
 }
 
 /**
@@ -81,14 +143,16 @@ function readPolicy(raw: string | undefined, flags: FeatureFlags): string {
  * 解析 honk 独有参数。
  * @param args - `$arguments` 原始对象（只取 honk 独有字段，共用字段由 `buildFeatureFlags` 处理）
  * @param flags - 已经过 `buildFeatureFlags` 的共用参数解析结果，用于 grouptype → policy 回退
+ * @param fileContext - SubStore 文件处理作用域暴露的 `$file`；非 SubStore 环境传 `null`
  */
 export function buildHonkRuntimeOptions(
     args: HonkScriptArgs,
-    flags: FeatureFlags
+    flags: FeatureFlags,
+    fileContext: HonkFileContext | null = null
 ): HonkRuntimeOptions {
     const checkUrlRaw = args["check-url"]?.trim();
     return {
-        subscriptionUrl: readSubscriptionUrl(args.subscription),
+        subscriptionUrl: resolveSubscriptionUrl(args, fileContext),
         subscriptionTag: readString(args.subtag, HONK_ARG_DEFAULTS.subscriptionTag),
         subscriptionInterval: readString(
             args["sub-interval"],

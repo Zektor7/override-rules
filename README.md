@@ -297,6 +297,7 @@ URL hash 里的参数用 `&` 分隔，与 mihomo 侧完全兼容。分三类：*
 订阅：
 
 - `subscription`（**关键**）：honk 会按 interval 自动重拉的订阅 URL。**建议 URL 编码后传入**（Sub-Store hash 里含 `:` `?` `&` 会破坏解析），本覆写会自动 decode 一次。例：`subscription=https%3A%2F%2Fsub.example%2Ftoken`。缺省时产物里写占位 `https://example.com/your-subscription` 并带一行提示。
+- `sub-base`（**自动关联**）：SubStore 服务的基础地址（host + 后端路径，不含 `/download/...`）。传入后，覆写脚本会结合 SubStore 注入到脚本作用域的当前文件来源（`$file.sourceType` / `$file.sourceName`）自动拼出订阅下载地址——`collection` 拼成 `/download/collection/<name>`、`subscription` 拼成 `/download/<name>`，省去手工写完整 `subscription`。**显式 `subscription` 仍优先**；仅当 `sub-base` 与来源信息同时存在时才生效，否则回退占位 URL。例：`sub-base=http%3A%2F%2Fsub.192-168-1-184.nip.io%2FtdtVuezFG`（内网 SubStore 用 http 是刻意为之）。
 - `subtag`：订阅 tag 名，默认 `my_sub`；honk 里的 `subtag(...)` 过滤器可以按它精确挑节点。
 - `sub-interval`：拉订阅间隔，默认 `86400s`；honk 接受 `30m` / `1h` / 秒数等格式。
 - `sub-route`：拉订阅的出口，默认 `direct`；也可以是某个组名（比如 `Select`），首次启动时如果这个组还没有可用节点会拉取失败——推荐保持 `direct`。
