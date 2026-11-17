@@ -13,7 +13,14 @@ const tsTypeChecked = tseslint.configs.recommendedTypeChecked.map((config) => ({
 export default [
     // 全局忽略
     {
-        ignores: ["yamls/**", "convert.js", "convert.min.js", "node_modules/**"],
+        ignores: [
+            "yamls/**",
+            "convert.js",
+            "convert.min.js",
+            "convert-honk.js",
+            "convert-honk.min.js",
+            "node_modules/**",
+        ],
     },
 
     // 主规则：应用于所有 JS 文件
@@ -109,6 +116,20 @@ export default [
             "@typescript-eslint/no-unnecessary-condition": "off",
             "@typescript-eslint/no-base-to-string": "off",
             "sonarjs/no-alphabetical-sort": "off",
+            // 测试用 LAN 内网 SubStore 地址（如 nip.io → 192.168.x.x），http 是刻意为之
+            "sonarjs/no-clear-text-protocols": "off",
+        },
+    },
+
+    // Sub-Store 脚本作用域模拟：必须用 new Function 注入自由变量，
+    // 这正是 Sub-Store 后端执行脚本的方式
+    {
+        files: ["tests/substore-scope.test.ts"],
+        rules: {
+            "@typescript-eslint/no-implied-eval": "off",
+            "@typescript-eslint/no-unsafe-function-type": "off",
+            "@typescript-eslint/no-unsafe-call": "off",
+            "sonarjs/code-eval": "off",
         },
     },
 

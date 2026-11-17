@@ -2,6 +2,9 @@
 yamls/
 convert.js
 convert.min.js
+convert-honk.js
+convert-honk.min.js
+src/generated/honk-rulesets.ts
 
 # 依赖
 node_modules/

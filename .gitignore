@@ -4,6 +4,8 @@ node_modules/
 # Build artifacts
 convert.js
 convert.min.js
+convert-honk.js
+convert-honk.min.js
 yamls/
 
 # Test coverage

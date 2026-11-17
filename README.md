@@ -237,6 +237,203 @@ https://git.l3zc.com/powerfullz/override-rules/raw/branch/dist/yamls/config_gt-0
 
 *注：CI 仅套用了一份虚拟的 `fake_proxies.json` 来模拟生成 YAML，因此它无法像 JS 动态脚本那样根据你的实际节点智能生成专属分组策略，只能保守地包含常用的国家/地区。为了最高效的分流体验，仍强烈推荐使用 JS 覆写。*
 
+### 关于 honk 客户端的动态覆写（convert-honk.min.js）
+
+[honk](https://github.com/daeuniverse/honk) 是 dae 的 Rust + eBPF 重写（Linux 6.12+，常见于 OpenWrt / 软路由），配置文件为 `config.dae`（dae 语法），与 Clash/Mihomo 的 YAML 存在语义鸿沟。本项目为 honk 提供一个与 `convert.min.js` **操作路径完全一致**的动态覆写入口 `convert-honk.min.js`：同样绑在 Sub-Store 的「文件」上，拿到上游 Clash 配置后生成一段 `config.dae` 文本，Sub-Store 把它原样作为响应体吐出，honk `wget` 下来就是能用的策略骨架。
+
+> **为什么 honk 脚本不跟 mihomo 一样返回对象？**
+> Sub-Store 在「Clash Config」类型的文件上会执行 `YAML.safeDump(await main(config))`——返回字符串会被包成 `|-` 块标量，honk 解析不了。因此 honk 脚本改为在 Sub-Store 的**文件作用域**里直接写回 `$content`（脚本被原样内联进 `operator`，`$content` 就是响应体），并且**不注册全局 `main`**，避免被 YAML 化。详见 [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md#honk-动态覆写convert-honkjs)。
+
+#### 产物只包含策略骨架
+
+本项目输出的 `config.dae` 只写与分类/分流相关的四段：`subscription {}` / `group {}` / `dns {}` / `routing {}`；文件顶部固定写：
+
+```
+include {
+    system.dae
+}
+```
+
+`global {}`（网卡、dial_mode、data_dir、log_level 等）与 `experimental {}`（native_api / clash_api / cache_file）属于机器/部署参数，**需要你在同目录下自己创建 `system.dae`**，honk 会把两部分自动合并。参考下面「system.dae 参考」。
+
+#### 产物里的组
+
+honk 的组没有「候选列表」，成员只能靠 `filter` 命中。产物里的层级与 mihomo 侧一一对应：
+
+```
+流量 → 路由规则 → 服务组 / 地区组 → 选择代理 → 自动选择 → 地区组 → 具体节点
+```
+
+| 组 | filter | policy | 默认成员 |
+| --- | --- | --- | --- |
+| `HK` / `TW` / `JP` / `US` … | `name(regex: '香港')` | 跟随 `#policy`（默认 score） | — |
+| `Other`（未分类） | `!name(regex: '<已知国名>')` | 跟随 `#policy` | — |
+| `Auto`（自动选择） | `group('HK', 'TW', …, 'Other')` | 跟随 `#policy` | — |
+| `Manual`（手动选择） | `!name(regex: '<机场元信息>')` | select | — |
+| `Select`（选择代理） | `group('Prefer'?, 'Auto', <地区…>, 'Other', 'Manual')` | select | `Prefer` / `Auto` |
+| `AI` / `Netflix` / `Youtube` … | `group('Select', <地区…>, 'Other', 'Manual')` + `name(direct)` | select | `Select`（直连优先的服务为 `direct`） |
+| `Final`（默认分流） | `group('Select', <地区…>, 'Other', 'Manual')` + `name(direct)` | select | `direct` |
+
+要点：
+
+- **全量节点只出现在 `Manual` 组**；其余组都靠 `group(...)` 嵌套引用别的组，成员互不相同。
+- 地区组按**中文国名**匹配即可——上游用重命名脚本规范化后节点名形如 `香港 01`、`🇭🇰 香港 IPLC 02`，不必再用庞大的同义词正则。
+- `Other`（未分类）组收留**不属于任何已知地区**的节点（名字里没有国名，或属于本项目未收录的地区），避免它们被忽略；`Auto` 也会把它纳入候选，自动选路不会漏掉它们。
+- `Auto` 的候选是地区组与未分类组，`Select` 再包住 `Auto` / 地区 / 手动选择——与 mihomo 侧的层级一致，面板上可以逐层手动指定。
+- 地区组**只要该地区有节点就建组**（honk 侧不受 `threshold` 限制）。
+- `include` / `exclude` 裁掉规则后，不再被任何规则引用的服务组也不会生成（与 mihomo 侧一致）。
+- honk 侧**不生成「故障转移」与「低倍率节点」组**：前者与 `Auto` 候选重复，后者只是节点属性，单独建组会在面板上多出一堆重复入口。mihomo 侧不受影响。
+- **面板里「直连 direct 显示不可用」是正常现象**：honk 的 `direct` 是启动时注入的保留出站（不是订阅节点），不参与 TCP 探测，因此没有健康/延迟数据；它作为路由出口和组成员都完全可用。
+
+#### 使用流程
+
+操作路径与 mihomo 覆写**一模一样**：都是 Sub-Store 里的「文件」+「脚本操作」。
+
+1. **先在路由器上创建 `/etc/honk/system.dae`**，写入 `global {}` 与 `experimental {}` 两段（参考下面的参考模板）。
+2. 在 Sub-Store 里新建一个「文件」：
+   - 类型选 **「Clash Config」**；
+   - 来源选 **组合订阅**（和 mihomo 那边用的是同一份 collection）。
+3. 给这个「文件」加一条「脚本操作」，Source 选 URL：
+   ```
+   https://cdn.jsdelivr.net/gh/powerfullz/override-rules/convert-honk.min.js
+   ```
+   参数写在 URL 的 `#` 后面（可选），例如 `#grouptype=1&sub-interval=3600s`。
+4. 客户端 GET 这个**文件**的 download URL，返回的就是 `config.dae` 全文：
+   ```bash
+   wget -qO /etc/honk/config.dae.new "https://substore.example/xxx/api/file/<文件名>" \
+     && honk-core config validate --config /etc/honk/config.dae.new \
+     && mv /etc/honk/config.dae.new /etc/honk/config.dae \
+     && kill -HUP $(pidof honk-core)
+   ```
+
+> **订阅地址会自动关联**：脚本会从当前下载请求的地址反推出 Sub-Store 基础地址，再结合「文件」的来源（组合订阅名 / 单条订阅名）拼出 `subscription { my_sub: '…/download/collection/<name>' }`，你**不需要**手抄下载地址。显式传 `#subscription=` 时以你传的为准；反推不出来时可以用 `#sub-base=<基础地址>` 手动指定。
+
+#### 骨架与订阅两条链分开
+
+- **骨架**（本文件生成的 `config.dae` 本身）：**一次性 curl**。改参数、改分流规则才需要重跑；一年改不了几次。
+- **节点集合**（骨架里 `subscription {}` 那个 URL）：honk **原生定时重拉**（默认 `interval: 86400s`，可通过 `#sub-interval=3600s` 缩短），机场加/减节点你不需要动 honk 或 Sub-Store，到点自己刷。想立刻刷新：`kill -HUP $(pidof honk-core)`。
+
+`subscription {}` 指向的就是**你现有 mihomo 那边用的那份组合订阅下载地址**（已经带 `include/exclude/prefer` 处理过）——两条链共用同一个上游，honk/mihomo 拿到的节点集合天然一致；`config.dae` 里的 `filter: name(regex: '…')` 会再对节点名字做二次匹配落到不同策略组。
+
+#### honk 支持的传参
+
+URL hash 里的参数用 `&` 分隔，与 mihomo 侧完全兼容。分三类：**与 mihomo 同义**、**honk 独有（策略层）**、**honk 会忽略或已迁到 system.dae**。
+
+**与 mihomo 完全同义（详见上文「JS 覆写使用示例」，此处只列差异）：**
+
+| 参数 | honk 语义 | 备注 |
+| --- | --- | --- |
+| `grouptype` | 派生自动类组的默认 policy：0→`select`；1→`score`；2→`loadbalance`（显式传 `#policy=` 会覆盖） | 默认 1 |
+| `threshold` | 地区节点数阈值；不足 2 个地区时展平 | 默认 2 |
+| `ipv6` | 控制 `dns` 段的 `ipversion_prefer`：false → `4`（偏好 IPv4，仍保留 IPv6 回退，**不禁用 v6 地址**）；true → 不写（两个地址族都用） | 默认 false |
+| `quic` | 控制 `routing` 是否插入 `l4proto(udp) && dport(443) -> block` | 默认 false |
+| `adblock` | 0 关闭；1/2/3 都近似为 `domain(geosite: category-ads-all) -> block`（honk 侧无远程规则源，三个源无法区分） | 默认 3 |
+| `include` / `exclude` | 与 mihomo 侧共用 `shouldKeepRule()` 语义，作用于 `routing {}` 段落 | Fork 特性 |
+| `prefer` | 命中时生成 `Prefer` 组：`policy: fallback` + `final: Auto` | Fork 特性 |
+
+**honk 独有（策略层，全部写到 `config.dae` 本体里）：**
+
+订阅：
+
+- `subscription`（**可选**）：honk 会按 interval 自动重拉的订阅 URL。**不传也能用**——覆写会自动关联出你那份组合订阅的下载地址（见下面 `sub-base`）。需要手工指定时才传，**建议 URL 编码后传入**（Sub-Store hash 里含 `:` `?` `&` 会破坏解析），本覆写会自动 decode 一次。例：`subscription=https%3A%2F%2Fsub.example%2Ftoken`。三处都拿不到时产物里写占位 `https://example.com/your-subscription` 并带一行提示。
+- `sub-base`（**一般不用传**）：SubStore 服务的基础地址（host + 后端路径，不含 `/download/...`）。脚本会先从当前下载请求的地址反推这个基础地址（`/api/file/<name>` → 基础地址），再结合 SubStore 注入到脚本作用域的当前文件来源（`$file.sourceType` / `$file.sourceName`）自动拼出订阅下载地址——`collection` 拼成 `/download/collection/<name>`、`subscription` 拼成 `/download/<name>`，省去手工写完整 `subscription`。反推失败（比如通过定时同步而非直接下载触发）时，用它手动指定。**显式 `subscription` 仍优先**。例：`sub-base=http%3A%2F%2Fsub.192-168-1-184.nip.io%2FtdtVuezFG`（内网 SubStore 用 http 是刻意为之）。
+- `subtag`：订阅 tag 名，默认 `my_sub`；honk 里的 `subtag(...)` 过滤器可以按它精确挑节点。
+- `sub-interval`：拉订阅间隔，默认 `86400s`；honk 接受 `30m` / `1h` / 秒数等格式。
+- `sub-route`：拉订阅的出口，默认 `direct`；也可以是某个组名（比如 `Select`），首次启动时如果这个组还没有可用节点会拉取失败——推荐保持 `direct`。
+- `sub-cache`：是否把订阅正文缓存到本地状态库（离线可用），默认 `true`。
+- `sub-ua`：拉订阅的 User-Agent，默认 `clash.meta/1.19.30`（部分机场按 UA 判定分发格式，用 mihomo UA 可拿到最完整的 Clash YAML 正文）。
+
+策略（group）：
+
+- `policy`（**honk 侧新默认**）：`Auto` / 地区组这两类「自动类组」统一使用的 policy，默认 `score`（honk 基于实际可靠性 + 新鲜目标质量 + 有界验证选成员，比 `min_moving_avg` 更贴近“自动”预期）。`Select` / `Manual` / `Final` / 服务组是组选择器，固定 `select`。可选值（大小写不敏感，来自 [groups.md#策略](https://github.com/daeuniverse/honk/blob/main/doc/zh/reference/groups.md#%E7%AD%96%E7%95%A5)）：
+  - `select` / `selector` / `fixed` / `fixed(N)`：手动固定；
+  - `urltest` / `min_moving_avg` / `min_avg10` / `min_last_delay`：延迟优先；
+  - `loadbalance` / `roundrobin` / `round_robin` / `balance`：轮换；
+  - `fallback`：按声明顺序取首个存活；
+  - `score`：基于业务观测的智能选（默认）。
+  `Select` / `Fallback` 两个组不受本参数影响，分别固定 `select` / `fallback`。非法值回退到 `HONK_POLICIES[grouptype]`。
+- `tolerance`：URLTest/Score 切换阈值（毫秒，纯整数），仅在 policy 为自动选时写入。默认不写，honk 侧默认 50。
+- `idle-timeout`：URLTest 组连续多少秒没被选用后暂停成员探测（纯整数秒），默认不写（honk 侧 1800）。语义类似 Clash 的 `lazy`。
+- `check-url`：非 Selector 策略的按组 TCP 健康检查 URL（HTTP(S)，后面可接逗号分隔的字面 IPv4/IPv6）；默认不写（honk 使用内置探测目标）。**不要给 Selector 组写**，honk 会忽略。
+- `interrupt`：自动选择类组是否在成员变化时中断已有连接（`true`/`false`/`1`/`0`），默认 `false`。`Select` 与 `Final` 自身硬编码为 `true`，不受本参数影响。
+
+DNS：
+
+- `dns-default`：国内 DNS 上游，默认 `https://223.5.5.5/dns-query?tls_server_name=dns.alidns.com`；honk upstream 支持 `udp://` / `https://` / `tcp://` / `quic://` / `dot://`。
+- `dns-remote`：国外 DNS 上游，默认 `https://8.8.8.8/dns-query?tls_server_name=dns.google`。
+- `dns-remote-exit`：`dns-remote` 绑定的出口组名，默认 `Select`（在面板切 Select 就等于切所有 DNS 出口）。可以改成 `Auto` 让 DNS 流量也走自动测速。
+- `dns-client-subnet`：向 upstream 携带 ECS 头，默认 `auto`（honk 按节点位置推断）；`off` 关闭；`<ipv4/24>` 手工指定。
+
+**本覆写不再接受的参数（已迁到 `system.dae`）：**
+
+以前支持的 `lan-iface` / `wan-iface` / `dial-mode` / `data-dir` / `log-level` / `allow-insecure` / `store-subscribe` / `nfqueue` / `auto-kernel`、以及 `native-api` / `native-listen` / `native-ui` / `clash-api` / `clash-controller` / `clash-ui` / `clash-secret` 全部不再接受。传了也不报错，但不会反映到产物里；请直接写到你的 `system.dae` 里。
+
+**honk 会忽略的 mihomo 参数**（传了没效果）：
+
+- `landing` / 前置代理链（honk 无 `dialer-proxy`）；
+- `fakeip`（honk 无 FakeIP 引擎）；
+- `tun`（honk 是 eBPF 透明代理）；
+- `keepalive`（honk 无独立开关）；
+- `full`（本项目的 `full=true` 是给 Clash 加内核参数，honk 侧不适用）；
+- `sniffer`（honk 域名嗅探是 eBPF 层内建）；
+- `regex`（honk 天然靠 `filter: name(regex: '…')` 匹配节点）；
+- 「手动选择」/ `GLOBAL` 组（honk 侧由 `Select` 与 `Final` 分别承担）；
+- AdBlock / SogouInput 代理组（外部 rule-provider 无等价物，路由层直接落到 `block` / `direct`）；
+- Tailscale 节点与 `100.64.0.0/10` 定向分流（honk 无 tailscale outbound）。
+
+#### 完整 URL 示例
+
+假设你在 Sub-Store 里有一个「文件」（类型「Clash Config」、来源是组合订阅 `full`），想给 honk 用同一份订阅，且：
+
+- 自动类组走默认的 `score`（不写 `policy=` 就是 `score`）；
+- 排除 E-Hentai 与微博；
+- 每小时刷一次订阅；
+- URLTest 组空闲 30 分钟就停探测。
+
+对应的 Sub-Store「脚本操作」URL：
+
+```text
+https://cdn.jsdelivr.net/gh/powerfullz/override-rules/convert-honk.min.js
+  #exclude=EHentai,Weibo
+  &sub-interval=3600s
+  &idle-timeout=1800
+```
+
+（示例里的换行只是为了看，实际写在同一行）。
+
+`subscription {}` 里的地址由脚本自动关联成 `https://substore.example/sadsd/download/collection/full`——不需要手写。若脚本运行在定时同步等拿不到请求地址的场景，自动关联会失败，这时补一个 `#sub-base=https://substore.example/sadsd` 即可。
+
+#### system.dae 参考
+
+下面这份 OpenWrt x86 软路由常见的 `system.dae` 可以作为起点，按自己网卡与面板口令调整：
+
+```
+global {
+    wan_interface: auto
+    lan_interface: br-lan            # ip a 查自己的网卡
+    log_level: info
+    dial_mode: domain                # ip / domain / domain+ / domain++ / fallback
+    allow_insecure: false
+    auto_config_kernel_parameter: true
+    data_dir: '/etc/honk'            # OpenWrt /var 是内存盘，放 /etc 才能持久化
+    store_subscribe: true
+    nfqueue_enable: true
+}
+
+experimental {
+    native_api {
+        enabled: true
+        listen: '192.168.1.1:9527'   # 按你路由器 LAN IP 改；仅本机访问用 127.0.0.1:9527
+        password_auth: true
+        allow_anonymous_loopback: false
+        config_write: true
+        ui: '/usr/share/doona'       # 或 embedded，需 full 构建变体
+    }
+}
+```
+
+更多 honk 侧字段含义见 [daeuniverse/honk 配置指南](https://github.com/daeuniverse/honk/blob/main/doc/zh/configuration.md)。本项目侧的完整语义映射与实现细节见 [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md#honk-动态覆写convert-honkjs) 与 [`docs/HOW_TO_CUSTOMISE.md`](docs/HOW_TO_CUSTOMISE.md#自定义-honk-输出)。
+
 ### 如何自定义与贡献
 
 **如果你想基于本项目深度定制自己专属的覆写规则：**

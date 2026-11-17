@@ -7,6 +7,7 @@
   "type": "commonjs",
   "scripts": {
     "typecheck": "node node_modules/typescript-native/bin/tsc --noEmit",
+    "generate:honk-rulesets": "node scripts/generate-honk-rulesets.mjs",
     "build": "npm run typecheck && node scripts/build.mjs",
     "generate": "tsx scripts/yaml_generator/generator.ts",
     "test": "node --import tsx --test \"tests/**/*.test.ts\"",

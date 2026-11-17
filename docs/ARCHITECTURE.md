@@ -94,6 +94,14 @@ flowchart TD
 | `src/utils/primitives.ts` | 通用工具函数 | `buildList()`, `parseBool()`, `parseNumber()`, `isNotNull()` |
 | `src/utils/regex.ts` | 正则匹配工具 | `createCaseInsensitiveNodeMatcher()` |
 | `scripts/yaml_generator/generator.ts` | 静态 YAML 覆写文件生成器 | 穷举参数组合，生成 `yamls/` 目录下的 192 个 YAML 配置文件；支持 `LIMIT_COMBOS` 限制生成数量 |
+| `src/catalog/honk-groups.ts` | honk 输出专用的组名/策略/地区映射 | `HONK_GROUP_NAMES`, `HONK_POLICIES`, `toHonkName()`, `requireHonkName()`, `honkCountryName()` |
+| `src/types/honk.ts` | honk 构建层需要的类型 | `HonkScriptArgs`, `HonkFileContext`, `HonkRequestContext`, `HonkRuntimeOptions`, `HonkBuildContext`, `InlineRuleSetMap`, `HonkGroupSpec` |
+| `src/args/honk-schema.ts` | honk 独有参数的默认值 | `HONK_ARG_DEFAULTS` |
+| `src/args/honk-parse.ts` | honk 独有参数的解析 | `buildHonkRuntimeOptions()`；内部按「显式 subscription → 文件下载地址 → 基础地址+来源」解析订阅 URL |
+| `src/builders/honk/` | honk `config.dae` 文本构建层 | `filter.ts` 生成 filter 表达式；`groups/rules/dns.ts` 分段渲染；`render.ts` 拼装 banner + `include { system.dae }` + 四段策略；`script.ts` 共享生成逻辑；`file-scope.ts` Sub-Store 文件作用域胶水（读 `$content` → 写回 `$content`） |
+| `src/main-honk.ts` | honk 覆写的运行时入口（`convert-honk.js` / `convert-honk.min.js`） | Sub-Store 文件作用域入口 `applyFileScope()`；非 Sub-Store 环境才注册 `globalThis.main`；同时导出 `runHonkEntry()` 供测试直接调用 |
+| `src/generated/honk-rulesets.ts` | 自维护 `ruleset/*.list` 的编译期内联产物 | `INLINED_HONK_RULESETS`；由 `scripts/generate-honk-rulesets.mjs` 写入，已提交到 git |
+| `scripts/generate-honk-rulesets.mjs` | 将 `ruleset/*.list` 转写为 `src/generated/honk-rulesets.ts` | `npm run generate:honk-rulesets`；`npm run build` 会自动先跑一次 |
 | `tests/` | 轻量单元测试（`node --import tsx --test`） | 覆盖参数解析、节点分类、代理组构造、规则/DNS/TUN、最终组装 |
 
 ---
@@ -238,3 +246,242 @@ YAML 模式的特点：
 - 不依赖脚本运行时，兼容性最广
 
 两种模式共享同一套 `src/catalog/` 与 `src/builders/` 逻辑，区别仅在于运行时的数据来源和过滤方式。
+
+### honk 动态覆写（convert-honk.js）
+
+**面向 [daeuniverse/honk](https://github.com/daeuniverse/honk) 客户端的产物**（honk 是 dae 的 Rust + eBPF 重写，配置语法沿用 dae，文件后缀 `.dae`）。honk 本身不执行 JS、也不能从 URL 拉 `config.dae` 本体，但 Sub-Store 侧可以把文件作用域里的 `$content` 原样当响应体吐出来。本项目的 honk 入口 `src/main-honk.ts` 与 Clash 侧的 `src/main.ts` **共用同一套参数解析与节点分类**，分叉只在「产物是什么」与「怎么把产物送出去」。
+
+与 mihomo 分支共享：参数解析 `buildFeatureFlags` / 节点分类 `analyzeNodes` / 国家与服务目录 `catalog/countries` / `catalog/service-groups` / `catalog/rule-sets` / `catalog/low-cost`；分叉点只在构建层：mihomo 走 `builders/{config,proxy-groups,rules,dns,tun,sniffer,full-config,geox}.ts`，honk 走 `builders/honk/*`。
+
+#### 输出通道：为什么 honk 不能像 mihomo 那样返回对象
+
+mihomo 覆写返回**对象**，Sub-Store 用 `YAML.safeDump(main(config))` 序列化，得到 Clash YAML——这正是 mihomo 要的。honk 要的是 `config.dae` 文本，它**不是 YAML**，走同一条路只会被包成 `|-` 块标量，honk 解析不了。
+
+Sub-Store 实际执行脚本的位置是 `ScriptOperator.nodeFunc`：脚本被**原样内联**进 `operator` 函数体，文件作用域里拿到 `$content` / `$files` / `$options` / `$file`，执行完 `$content` 就是响应体。于是 honk 走这条通道：
+
+```
+SubStore  ScriptOperator.nodeFunc
+   │  if ($file.type ∈ {mihomoConfig, mihomoProfile}) {
+   │      <脚本原样内联>
+   │      if (typeof main === 'function')            ← 只有全局有 main 才会进
+   │          $content = YAML.safeDump(await main(config))   ← 会把文本 YAML 化
+   │  } else {
+   │      <脚本原样内联>                              ← 「文件」类型走这里
+   │  }
+   ▼
+convert-honk.js  在文件作用域里：读 $content（上游 Clash YAML）→ 生成 config.dae → 写回 $content
+```
+
+对应到代码：
+
+| 环节 | 位置 |
+| --- | --- |
+| 判定是否在 Sub-Store 作用域 | `src/main-honk.ts::isSubStoreScope()`（`typeof $arguments !== "undefined"`） |
+| 文件作用域入口 | `src/main-honk.ts::applyFileScope()` |
+| 抑制全局 `main` | `src/main-honk.ts::suppressGlobalMainLookup()`——把 `globalThis.main` 置空，避免被 `safeDump` 覆盖（mihomo 脚本每次运行会重新注册自己的 `main`，互不影响） |
+| 解析上游内容取节点 | `src/builders/honk/file-scope.ts::buildHonkFileScope()`——优先用 Sub-Store 注入的 `yaml` 解析 Clash 配置，退化时用 `ProxyUtils.parse` |
+| 共享生成逻辑 | `src/builders/honk/script.ts::buildHonkFromConfig()`（`main(config)` 与文件作用域共用） |
+
+**注意**：脚本挂在订阅/组合订阅（节点列表作用域）时不会生效——那里逐节点执行脚本，没有 `$content`。此时脚本会在日志里提示一次「请挂到文件上」。
+
+`tests/substore-scope.test.ts` 完整复刻了 Sub-Store 的 `nodeFunc` 执行方式（含 `safeDump(await main(config))` 分支），用真实构建产物断言「响应体是裸 `config.dae`、不是 YAML、也没有 `|-` 前缀」。
+
+#### 只输出策略骨架，不输出部署层
+
+honk 的 `config.dae` 一共八段：`global` / `subscription` / `node` / `group` / `dns` / `routing` / `assets` / `experimental`。本项目只写**策略相关的四段**（`subscription` / `group` / `dns` / `routing`），`global` 与 `experimental` 属于部署层（网卡、数据目录、面板监听地址与口令），**交给同目录下的 `system.dae`**，本项目的 `config.dae` 顶部固定写：
+
+```
+include {
+    system.dae
+}
+```
+
+honk 会把 `system.dae` 里的段与本体自动合并（参见 [honk 配置指南](https://github.com/daeuniverse/honk/blob/main/doc/zh/configuration.md#使用-include-拆分配置)：后出现的标量 key 覆盖先前的，集合条目按顺序追加）。好处：
+
+- **部署层变更不需要重跑本项目**：换网卡、改面板口令、开/关 API 都不影响策略骨架，直接改 `system.dae` + `SIGHUP`；
+- **多设备共用同一份策略**：同一个 Sub-Store Override URL 可以给 OpenWrt 主路由与 x86 旁路由共同拉，各自的 `system.dae` 写自己环境的网卡与面板地址；
+- **luqi-app-honk 等托管面板兼容**：OpenWrt 上 luci 面板依赖 `system.dae` 存在来写监听端口与 API 开关，本项目不写 `global/experimental` 就不会冲突。
+
+#### 三段式参数体系
+
+honk 入口的 `$arguments` 同时包含三类参数，互不干扰：
+
+| 类别 | 字段 | 解析器 | 默认值 |
+| --- | --- | --- | --- |
+| 与 mihomo **同义** | `grouptype` / `threshold` / `ipv6` / `quic` / `adblock` / `include` / `exclude` / `prefer` | `args/parse.ts::buildFeatureFlags()` | 与 mihomo 分支一致，`args/schema.ts::ARG_DEFAULTS` |
+| **honk 独有（策略）** | `subscription` / `sub-*` / `policy` / `tolerance` / `idle-timeout` / `check-url` / `interrupt` / `dns-*` | `args/honk-parse.ts::buildHonkRuntimeOptions()` | `args/honk-schema.ts::HONK_ARG_DEFAULTS` |
+| **honk 会忽略 / 已迁到 `system.dae`** | `landing` / `fakeip` / `tun` / `sniffer` / `keepalive` / `full` / `regex`（本身无对应）；`lan-iface` / `wan-iface` / `dial-mode` / `data-dir` / `log-level` / `native-*` / `clash-*`（已迁到 `system.dae`） | 不读取 | — |
+
+两个解析器都只取自己关心的键，多余字段自然丢弃；honk 入口先跑 `buildFeatureFlags` 得到 `flags`，再把 `flags` 一并传给 `buildHonkRuntimeOptions(args, flags)`，用于 `#policy` 缺省时回退到 `HONK_POLICIES[flags.groupType]`（默认 grouptype=1 → `score`）。完整的 honk 参数列表与默认值见 [`README.md`](../README.md#honk-支持的传参)。
+
+#### 订阅连接自动关联（请求地址反推 + `$file`）
+
+honk 没有 rule-provider，节点更新靠 `subscription {}` 里的 URL 定时重拉；手动传完整 `#subscription=<url>` 又要在 SubStore 里复制一份下载地址，改 URL 后容易忘了同步。因此订阅地址按下面的优先级自动解析（`args/honk-parse.ts::resolveSubscriptionUrl()`）：
+
+| 优先级 | 来源 | 说明 |
+| --- | --- | --- |
+| 1 | 显式 `#subscription=` | 永远胜出 |
+| 2 | 文件自身的下载地址（`$file.url`） | 「文件」类型下用户填的远程 URL 本身就是 SubStore 下载链接，去掉查询串即可 |
+| 3 | 基础地址 + `$file` 来源 | 基础地址 = `#sub-base=` 或**从当前下载请求反推**；来源 = `$file.sourceType` / `$file.sourceName` |
+| 4 | 占位 URL | `https://example.com/your-subscription`，产物里带提示 |
+
+第 3 条里的「反推」是自动化关联的关键：SubStore 处理文件下载时会把当前请求快照放进 `$options._req`（`url` + `headers`）。文件下载路由是 `/api/file/<name>`（分享路由是 `/share/file/<name>`），把这一段去掉剩下的就是服务基础地址：
+
+```
+请求 URL   http://sub.192-168-1-184.nip.io/tdtVuezFG/api/file/honk
+Host 头    sub.192-168-1-184.nip.io
+反推基础   http://sub.192-168-1-184.nip.io/tdtVuezFG
+拼出订阅   http://sub.192-168-1-184.nip.io/tdtVuezFG/download/collection/full
+```
+
+协议优先取 `x-forwarded-proto`（反向代理场景），其余按 `http` 处理。`$file.sourceType` 为 `collection` 时拼 `/download/collection/<name>`，`subscription` 时拼 `/download/<name>`；`local`/`remote`/`none` 没有独立可重拉地址，不参与拼接。
+
+因此**正常使用时一个参数都不用传**：把脚本挂到「文件」上，产物里的 `subscription { my_sub: '…/download/collection/<name>' }` 就已经指向你那份组合订阅。只有在定时同步等拿不到请求地址的场景才需要手动补 `#sub-base=`。
+
+#### 自动选择类组的默认策略：score
+
+honk 官方定义的 `policy` 有五种规范值（`selector` / `urltest` / `loadbalance` / `fallback` / `score`），每种还带若干兼容写法（`fixed(N)` / `min_moving_avg` / `roundrobin` 等），完整白名单见 `catalog/honk-groups.ts::HONK_POLICY_VALUES`。本项目**默认让自动类组（Auto / 地区 / 服务 / LowCost / Final）统一使用 `score`**：
+
+- `score` 是 honk 相较 dae 新增的策略，会基于实际业务可靠性 + 新鲜目标质量 + 有界验证选成员；
+- 与 mihomo 分支 `grouptype=1` 的“自动选”语义最匹配（mihomo 侧就是 `urltest`，honk 侧 `score` 比 `urltest` 更贴“自动”预期）；
+- 需要回到 dae 经典 `min_moving_avg` 语义，传 `#policy=urltest` 或 `#policy=min_moving_avg` 即可；
+- 需要轮换出口，传 `#policy=loadbalance`；
+- `Select` 与 `Fallback` 两个组不受 `#policy` 影响（面板上手动切 / 按顺序取首个存活，语义固定）。
+
+URLTest/Score 的调优字段也全部参数化：`#tolerance=<ms>` / `#idle-timeout=<s>` / `#check-url=<https://...>` / `#interrupt=true|false`。`Select` / `Fallback` 不会写这些字段（honk 会忽略并打 warning），只在自动选类组上输出。
+
+#### 自维护 ruleset 的内联链
+
+honk 没有 `rule-provider`，项目自带的 `ruleset/*.list`（`PT` / `TikTok` / `EHentai` / `Weibo` / `SteamFix` / `AdditionalFilter` / `AdditionalCDNResources`）必须在**编译期**烘到 JS bundle 里，才能让运行时产物包含完整域名列表：
+
+```
+ruleset/PT.list
+   │
+   ▼ scripts/generate-honk-rulesets.mjs   (npm run build 会自动先跑一次)
+src/generated/honk-rulesets.ts  (INLINED_HONK_RULESETS)
+   │
+   ▼ import
+src/main-honk.ts
+   │
+   ▼ buildHonkDae(ctx, INLINED_HONK_RULESETS)
+src/builders/honk/rules.ts  → inlineRuleSet(entries, target) → domain(full|suffix|keyword: …) -> Group
+```
+
+`src/generated/honk-rulesets.ts` 已**提交到 git**，避免克隆后必须先 `npm run build` 才能 `npm test`；修改 `.list` 文件后 `npm run artifacts` 会自动重生成。外部 rule-provider（`ADBlock` / `GFWList` 等）在产物里降级为 `geosite: category-ads-all` / `geolocation-!cn` 近似；无法近似的外部源（`SogouInput` / `StaticResources` / `CDNResources`）以 `# [honk] ...` 注释提示。
+
+#### honk 的组语义：`filter` 决定成员，`policy` 决定选法
+
+honk 的组没有 mihomo 的「候选列表」概念，成员只能靠 `filter` 表达式命中（见 honk
+[groups.md](https://github.com/daeuniverse/honk/blob/main/doc/zh/reference/groups.md)）：
+
+| filter 形态 | 含义 | 本项目用在哪 |
+| --- | --- | --- |
+| `name(regex: '…')` | 按节点名筛节点 | 地区组、低倍率组、Prefer 组 |
+| `group('Select', 'HK', …)` | 把嵌套组加入候选：每个嵌套组贡献它自身策略当前选出的那个叶节点 | `Auto` / `Fallback` / `Select` / 服务组 / `Final` |
+| `name(direct)` | 把注入的 `direct` 出站收进候选（只有按名字写出的过滤器才会收入它） | `Select` / 服务组 / `Final` |
+| `!name(regex: '…')` | 取反 | 「全订阅节点，但排除机场元信息条目」 |
+
+不同 `filter:` 行之间是「或」关系，同一行内用 `&&` 连接谓词。产物的层级与 mihomo 侧
+一一对应（`src/builders/honk/groups.ts::buildHonkGroupSpecs()`）：
+
+```
+<地区>   地区组   —— name(regex: '<中文国名>')（policy: #policy）
+Other    未分类   —— 不属于任何已知地区的节点（policy: #policy）
+Auto     自动选择 —— 候选是各地区组与未分类组（policy: #policy，默认 score）
+Manual   手动选择 —— 唯一持有全部节点的组（policy: select）
+Prefer   优先选择 —— 仅在 prefer 参数命中时生成
+Select   选择代理 —— 优先选择 / 自动选择 / 地区 / 未分类 / 手动选择
+                    （policy: select，default: Prefer 或 Auto，final: direct）
+<服务组> 服务组   —— 选择代理 / 地区 / 未分类 / 手动选择 / 直连
+                    （policy: select，default: 首个候选，直连优先的服务为 direct）
+Final    兜底     —— 选择代理 / 地区 / 未分类 / 手动选择 / 直连
+                    （policy: select，default: direct，final: direct）
+```
+
+关于「直连」：honk 在启动时注入 `direct` 与 `block` 两个**保留出站**（固定保留 ID，不是
+订阅节点），组不会自动纳入它们，只有精确匹配名称的 `filter: name(direct)` 才会选中。
+由于它们不参与 TCP 探测，面板上没有健康/延迟数据，因此会显示为「不可用」——这只是
+展示上的现象，作为路由出口与组成员都完全可用。
+
+要点：
+
+- **全量节点只存在于 `Manual` 组**；其余组都靠 `group(...)` 嵌套引用别的组，成员互不相同。
+  如果服务组继续用全量节点 filter，所有组会退化成同一张候选池，分流就失去意义——这也是
+  本项目早期 honk 产物的缺陷。
+- **地区匹配保持简单**：上游节点通常已由重命名脚本（如 Keywos/rule 的 `rename.js`）规范化为
+  「国名 + 关键词 + 序号」（`香港 01`、`🇭🇰 香港 IPLC 02`），因此地区组直接按**中文国名**
+  匹配（`name(regex: '香港')`），不必套用 `countriesMeta.pattern` 那套庞大的同义词正则——
+  honk 侧的 `countryFilter()` 与 mihomo 侧各走各的。
+- **`Other`（未分类）组兜底**：名字里没有已知国名、或属于本项目未收录地区（如「亚美尼亚」
+  「波多黎各」）的节点，在这里都有归属，不会只落在「手动选择」里被自动选路忽略。
+  它的 filter 是「排除所有已知国名 + 排除机场元信息」，比逐个列节点名更短也更稳定。
+- `Auto` 的候选是地区组与未分类组、`Select` 再包住 `Auto` / 地区 / 手动选择，与 mihomo 侧
+  「自动选择 = [地区组…]」「选择代理 = [自动选择, 地区组…, 手动选择, DIRECT]」同构，
+  面板上可以逐层手动指定。
+- **honk 侧不生成「故障转移」与「低倍率节点」组**（`HONK_GROUP_NAMES` 里置 `null`）：
+  前者与 `Auto` 候选完全重复，后者只是节点的一个属性，单独建组并挂进每个服务组会在面板上
+  多出一堆重复入口。mihomo 侧不受影响。
+- 地区组**只要该地区有节点就建组**：建组的边际成本为零（一条 filter），而按 mihomo 侧的
+  `threshold`（地区节点数下限）与「至少两个地区才分组」丢弃地区，会让「每区只有一两个节点」
+  的订阅一个地区组都没有，用户没法按地区挑。
+- `include` / `exclude` 裁掉规则后，不再被任何规则引用的服务组也不再生成（与 mihomo 侧
+  `filterProxyGroupsByRules()` 同语义）。
+- 声明顺序保证被嵌套引用的组一定在引用方之前（honk 对未知嵌套 tag 会以
+  `invalid-nested-group-reference` 拒收配置）。
+
+#### honk 的 DNS 段：不用系统 DNS，也不禁用 IPv6
+
+`builders/honk/dns.ts` 生成 `dns {}` 段，两个上游都显式声明（第一个 `upstream` 块会替换
+honk 内置条目，所以系统解析器不会再被用到）：
+
+- `default` → `direct`（国内 DNS 直连查询），`remote` → `opts.dnsRemoteExit`（默认 `Select`）；
+- 请求路由**第一条**是 `qname(suffix: nip.io) -> default`——自建 SubStore 等内网域名走
+  default 上游直连解析；
+- 请求路由里**没有 `-> asis`**（asis 会拿原始目的地址回查系统解析器），所有查询都落在
+  `default` 或 `remote` 上；
+- `#ipv6=false` 时写 `ipversion_prefer: 4`（偏好 IPv4，**保留 IPv6 回退**），而不是
+  `qtype(aaaa) -> reject`——后者会真的把 IPv6 地址禁掉。
+
+#### Clash → honk 的语义映射
+
+| Clash 侧概念 | honk 输出侧的处理 |
+| --- | --- |
+| `proxy-groups` 候选列表（引用其他组） | honk 没有候选列表，成员只能靠 `filter` 命中：`name(regex: '…')` 按节点名筛、`group('Select', 'HK', …)` 嵌套引用其它组、`name(direct)` 收进直连。各组的嵌套候选与 mihomo 侧一一对应 |
+| 地区代理组 | `name(regex: '<中文国名>')`——节点名已由上游重命名脚本规范化，按国名匹配即可；**只要该地区有节点就建组**（不受 `threshold` 与「至少两个地区」约束） |
+| 未收录地区 / 无地区关键词的节点 | 归入 `Other`（未分类）组：`!name(regex: '<已知国名>') && !name(regex: '<机场元信息>')`，保证不被忽略，且 `Auto` 也会把它纳入候选 |
+| 服务代理组 | `group('Select', <各地地区组>, 'Manual')` + `name(direct)`；`policy: select`，默认成员取 mihomo 侧候选列表的第一个（直连优先的服务为 `direct`）；哔哩哔哩/巴哈姆特/TruthSocial 按 mihomo 侧的地区偏好给候选 |
+| 「手动选择」组 | honk 保留该组（`Manual`），它是**唯一持有全部节点**的组；`Auto` / `Select` / 服务组 / `Final` 都只引用它与地区组 |
+| 「故障转移」/「低倍率节点」组 | honk 侧**不生成**（`HONK_GROUP_NAMES` 置 `null`）：前者与 `Auto` 候选重复，后者只是节点属性，单独建组只会在面板上多出重复入口 |
+| `url-test` / `select` / `load-balance` | 分别对应 `min_moving_avg` / `select` / `loadbalance`；另有 `fallback`、`score`（Final 使用） |
+| 中文/含空格组名 | honk 只允许 `[A-Za-z0-9]`；`HONK_GROUP_NAMES` 一次性映射为 ASCII 名（`AI`、`Crypto`、`TruthSocial` 等） |
+| `GEOSITE,<code>,<group>` | `domain(geosite: <code>) -> <HonkGroup>`，保留 `@cn` 与 `!cn` 修饰符 |
+| `GEOIP,cn,DIRECT` | `dip(geoip: cn) && !dport(53, 853) -> direct(must)`，避免误伤 DNS/DoT |
+| `RULE-SET,<key>` | 项目自维护的 `ruleset/*.list` 编译期内联为 `domain(full\|suffix\|keyword: …)`；`ADBlock` 近似为 `geosite: category-ads-all`，`GFWList` 近似为 `geosite: geolocation-!cn`；其他外部 rule-provider（`SogouInput` / `StaticResources` / `CDNResources`）以注释提示 |
+| `AdBlock` / `SogouInput` 代理组 | 不建组，路由层直接落到 `block` / `direct`，与 kenzok8 / qichiyuhub 模板一致 |
+| `MATCH,<group>` | `fallback: <HonkGroup>` |
+| QUIC 拦截 | `l4proto(udp) && dport(443) -> block` |
+| `prefer`（Fork） | 命中时生成 `Prefer` 组：`policy: fallback`，`final: Auto` |
+| `include` / `exclude`（Fork） | 与 mihomo 分支共用 `shouldKeepRule()`，在翻译到 honk 之前先把 Clash 侧规则列表裁一遍；裁剪后**不再被任何规则引用的服务组也不生成**（与 mihomo 侧 `filterProxyGroupsByRules()` 同语义），语义完全一致 |
+
+#### 被丢弃的字段
+
+honk 本身不包含下列概念，相关参数在运行时传不传都一样，`.dae` 产物里不产生输出：
+
+- `landing` 与 `dialer-proxy` 链式代理（honk 无 dialer-proxy）；
+- `Tailscale` 节点与 `100.64.0.0/10` 定向分流（honk 无 tailscale outbound）；
+- `fake-ip` 引擎（honk 仓库 README 明确“no FakeIP engine”）、`sniffer`、`tcp-keep-alive`；
+- `tun` 段（honk 是 eBPF 透明代理，开启 `nfqueue_enable` 与 `auto_config_kernel_parameter` 即可）；
+- `manual`（手动选择）：`Select` 组已承担同类作用；
+- `GLOBAL` 汇总组：`Final` 负责兜底。
+
+产物 banner 里会重复写一份上述丢弃项的注释（一行提示），方便排查。
+
+#### 与 `convert.js` / `yamls/` 的关系
+
+| 方面 | `convert.js` / `convert.min.js` | `yamls/*.yaml` | `convert-honk.js` / `convert-honk.min.js` |
+| --- | --- | --- | --- |
+| 客户端 | Clash/Mihomo，支持 Sub-Store JS Override | 不支持 JS 的旧版 Clash 客户端 | honk（Linux eBPF 网关，OpenWrt / 软路由为主） |
+| 入口文件 | `src/main.ts` | `scripts/yaml_generator/generator.ts` 包装 `convert.js` | `src/main-honk.ts` |
+| 构建方式 | `scripts/build.mjs` 一次 esbuild | 依赖先跑 `npm run build` 产出 `convert.js`，再由 `vm.runInContext` 执行 | `scripts/build.mjs` 与 mihomo 同批次 esbuild，共享 `prebuild` 钩子写入 `src/generated/` |
+| 输出形式 | Clash 配置对象 → YAML | 预先穷举的 192 份 YAML | 字符串 `config.dae`，Sub-Store 原样吐出 |
+| 参数传递 | URL hash，与 `$arguments` 合并 | 不同文件对应不同参数组合 | URL hash，与 `$arguments` 合并 |

@@ -158,6 +158,74 @@ export const PROJECT_URL = `${CDN_URL}/gh/Zektor7/override-rules@main`;
 // 如果没有在 group-names 中添加新代理组，也可以直接用现有的 PROXY_GROUPS.SELECT 等
 ```
 
+## 自定义 honk 输出
+
+honk 入口 `src/main-honk.ts` 与构建层 `src/builders/honk/` 产出 honk（dae 语法）的**策略骨架**（`subscription` / `group` / `dns` / `routing` 四段），与 mihomo 分支共享 `src/catalog/service-groups.ts` / `src/catalog/rule-sets.ts` / `src/args/parse.ts`；honk 自己的映射层在 `src/catalog/honk-groups.ts`（组名映射）与 `src/catalog/honk-countries.ts`（189 个国家/地区的中文名 → ASCII 组名），策略参数的默认值在 `src/args/honk-schema.ts`。新增一个组或地区时，除了改上游的 catalog，还要同步补 honk 侧映射，否则产物会拿到 `Region` 占位组名。
+
+`global {}` 与 `experimental {}` 属于部署层（网卡、数据目录、面板监听与口令），本项目不会写它们；产物顶部固定 `include { system.dae }`，honk 自动从同目录下的 `system.dae` 读取。**部署层变更不需要改本项目代码**，写你自己的 `system.dae` 就行（参考 [`README.md`](../README.md#systemdae-参考)）。
+
+### 新增代理组时
+
+在 `src/catalog/group-names.ts` 与 `src/catalog/service-groups.ts` 完成 Clash 侧定义后（参见上面两节），到 `src/catalog/honk-groups.ts` 中为 `HONK_GROUP_NAMES` 补一条 `KEY: "HonkName"`（honk 只允许 `[A-Za-z0-9]`）；如果该组在 honk 里无对应概念（如新引入一种与链式代理相关的组），直接写 `null`，生成器会同时跳过对应的组与路由规则。
+
+`Record<keyof typeof PROXY_GROUPS, string | null>` 的类型保证你遗漏时会在 `npm run typecheck` 阶段直接报错，不会静默产出缺组的配置。
+
+### 新增地区时
+
+在 `src/catalog/countries.ts` 的 `countriesMeta` 新增一条后，到 `src/catalog/honk-groups.ts` 内部的 `HONK_COUNTRY_CODES` 补一个 ASCII 组名（推荐 ISO 3166 alpha-2）。`tests/catalog/honk-groups.test.ts` 会调用 `assertHonkCountryMappings()` 验证两边一致，忘记补时 `npm test` 会直接报错。
+
+### 新增 honk 独有策略参数时
+
+1. 在 `src/types/honk.ts::HonkScriptArgs` 里声明 URL 参数字段（字符串形式）；
+2. 在 `src/types/honk.ts::HonkRuntimeOptions` 里声明解析后的强类型字段；
+3. 在 `src/args/honk-schema.ts::HONK_ARG_DEFAULTS` 里写默认值；
+4. 在 `src/args/honk-parse.ts::buildHonkRuntimeOptions(args, flags)` 里接入（字符串/布尔/正整数分别用 `readString` / `readBool` / `readPositiveInt`；policy 需要白名单时使用 `catalog/honk-groups.ts::isHonkPolicy`）；
+5. 在对应 `src/builders/honk/<段>.ts` 里从 `opts` 读取并写入输出；
+6. 补上 `tests/args/honk-parse.test.ts` 与相关 `tests/builders/honk/*.test.ts` 的断言。
+
+**仅当新字段属于“策略”时才加到本项目**：与上游订阅/域名分流/组策略/DNS 上游相关的才是策略（比如新增一个 `dns-local-exit`）；与网卡、面板口令、内核参数相关的属于部署层，写到 `system.dae` 里就行，不要往本项目里加。
+
+### 调整 honk 组的默认 policy 与调优字段
+
+`buildHonkGroupSpecs` 把 `Auto` / 地区组 / 服务组 / `LowCost` / `Final` 统一交给 `opts.policy`（默认 `score`）；`Select` 固定 `select`，`Fallback` 固定 `fallback`，`Prefer` 固定 `fallback` + `final: Auto`。改动时注意：
+
+- `HONK_POLICY_VALUES` 白名单与 honk 官方 [groups.md#策略](https://github.com/daeuniverse/honk/blob/main/doc/zh/reference/groups.md#%E7%AD%96%E7%95%A5) 保持同步；
+- `tolerance` / `idle-timeout` / `check-url` / `interrupt` 只在自动选类组上输出，`Select` / `Fallback` 不写（honk 会忽略并打 warning）；
+- icon 从 `catalog/icons.ts` 与 `catalog/countries.ts::countriesMeta[country].icon` 取，honk 会校验“绝对 HTTP(S) URL + 不含空白 + ≤ 2048 字”，不符合会直接拒收。
+
+### 调整 honk 组的成员（filter）
+
+honk 的组成员只由 `filter` 决定，语义见 honk 官方
+[groups.md#过滤解析](https://github.com/daeuniverse/honk/blob/main/doc/zh/reference/groups.md#%E8%BF%87%E6%BB%A4%E8%A7%A3%E6%9E%90)：
+
+- `Manual`（手动选择）是唯一持有全部节点的组，用 `builders/honk/filter.ts::ALL_NODES_FILTER`（全订阅节点减去机场元信息条目）；
+- 地区组用 `builders/honk/filter.ts::countryFilter()`，按**中文国名**匹配（`name(regex: '香港')`）——上游节点名已由重命名脚本规范化为「国名 + 关键词 + 序号」，不需要庞大的同义词正则；
+- 不属于任何已知地区的节点由 `builders/honk/filter.ts::unclassifiedFilter()` 收进 `Other`（未分类）组（排除所有已知国名 + 排除机场元信息），避免被忽略；
+- `Auto` / `Select` / 服务组 / `Final` 用 `builders/honk/filter.ts::groupFilter()` 生成 `group('Select', <地区组…>, 'Manual')`——**嵌套引用的组必须真实存在**，否则 honk 启动会以 `invalid-nested-group-reference` 拒收配置；直连用 `name(direct)` 收进候选；
+- 服务组的候选规则集中在 `catalog/honk-groups.ts::honkServiceCandidates()`，与 mihomo 侧 `catalog/service-groups.ts` 的候选语义一一对应（含直连优先的几个服务）。
+
+多个 `filter:` 行之间是「或」关系，`HonkGroupSpec.filter` 传数组即可渲染成多行。新增服务组或改地区组时，记住 honk 侧「只要该地区有节点就建地区组」，不受 mihomo 侧 `threshold` 的约束；honk 侧也不生成「故障转移」「低倍率节点」组（`HONK_GROUP_NAMES` 里置 `null`）。
+
+### 新增项目自维护的 ruleset 时
+
+只要把新的 `<Key>.list` 放到 `ruleset/` 目录，同时在 `scripts/generate-honk-rulesets.mjs` 顶部的 `OWNED_RULESETS` 数组里加上 `"<Key>"`，`npm run build`（或 `npm run generate:honk-rulesets`）就会重写 `src/generated/honk-rulesets.ts`；`main-honk.ts` 里的 `INLINED_HONK_RULESETS` 自动多一个键，honk `routing {}` 会把它展开为 `domain(full|suffix|keyword: …)` 行。外部 rule-provider 无法内联，只能在 `src/builders/honk/rules.ts` 里的 `EXTERNAL_RULESET_TO_GEOSITE` 或 `EXTERNAL_RULESETS_SKIPPED` 登记一下，否则会在产物里以「未识别的 RULE-SET」注释形式提示。`src/generated/honk-rulesets.ts` 已**提交到 git**（保证克隆后能直接 `npm test`），重生成后请记得一并提交。
+
+### 本地验证
+
+```bash
+# 确认产物里包含期望的段与参数（用 Node 模拟 Sub-Store 跑一遍）
+npm run build && node -e "
+  const fs = require('node:fs'); const vm = require('node:vm');
+  const code = fs.readFileSync('convert-honk.js', 'utf8');
+  const sandbox = { console, \$arguments: { subscription: 'https://sub.example/token', grouptype: '1' } };
+  vm.createContext(sandbox); vm.runInContext(code, sandbox);
+  console.log(sandbox.main({ proxies: [{ name: '香港01' }, { name: '香港02' }, { name: '美国01' }] }));
+"
+```
+
+honk 侧无对应概念的字段（`landing` / `fakeip` / `tun` / `sniffer` / `keepalive` / `manual` / `GLOBAL`）与已迁到 `system.dae` 的部署字段（`lan-iface` / `data-dir` / `native-*` / `clash-*` 等）均不产生输出，传不传都一样。honk 与 Clash 的完整语义映射表见 [`ARCHITECTURE.md`](ARCHITECTURE.md#clash--honk-的语义映射)。
+
+
 ## 构建并使用你的定制脚本
 
 在修改完成后，你可以先在本地运行构建命令来验证你的更改是否正确：

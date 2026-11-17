@@ -42,14 +42,15 @@ npm run format:check && npm run lint && npm run typecheck && npm test && npm run
 
 本项目为 **Mihomo/Clash 订阅覆写工具**：读取上游订阅的代理节点，按落地/非落地、国家/地区、低倍率、Tailscale 等维度分类，再生成代理组、分流规则、DNS、TUN 等配置。
 
-项目同时产出两种形式：
+本项目同时产出三种形式：
 
 | 形式 | 入口 | 特点 |
 | --- | --- | --- |
-| JS 动态覆写 | `src/main.ts` → `convert.js` / `convert.min.js` | 主推方式；运行时读取真实节点，支持 URL 参数 |
-| 静态 YAML 覆写 | `scripts/yaml_generator/generator.ts` → `yamls/*.yaml` | 备用方式；用假节点穷举参数组合，适合不能执行 JS 的客户端 |
+| JS 动态覆写（mihomo/Clash） | `src/main.ts` → `convert.js` / `convert.min.js` | 主推方式；`main(config)` 返回 Clash 配置对象，Sub-Store 序列化为 YAML |
+| 静态 YAML 覆写 | `scripts/yaml_generator/generator.ts` → `yamls/*.yaml` | 备用方式；用假节点穷举参数组合，适合不能执行 JS 的 Clash 客户端 |
+| honk 动态覆写 | `src/main-honk.ts` → `convert-honk.js` / `convert-honk.min.js` | 面向 [honk](https://github.com/daeuniverse/honk)（dae 语法、eBPF 代理）；绑在 Sub-Store 的「文件」上，在文件作用域里读 `$content`（上游 Clash 配置）、生成 `config.dae` 并写回 `$content`，Sub-Store 原样吐出（**不能**走 `main(config)` 返回值那条路，会被 `YAML.safeDump` 包成 `|-` 块标量）；只写策略骨架（subscription/group/dns/routing），`global` 与 `experimental` 交给同目录下的 `system.dae`（通过顶部 `include { system.dae }` 引入） |
 
-两种形式共享 `src/catalog/` 与 `src/builders/` 的逻辑，区别只在数据来源和过滤方式。详见 [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md)。
+三种形式共享 `src/catalog/` 与 `src/args/`、`src/analysis/` 的主逻辑（参数解析与节点分类），区别只在数据来源与构建层（Clash 侧 `src/builders/*`，honk 侧 `src/builders/honk/*`）。详见 [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md)。
 
 ---
 
@@ -57,8 +58,9 @@ npm run format:check && npm run lint && npm run typecheck && npm test && npm run
 
 | 规则 | 说明 |
 | --- | --- |
-| **只改源码** | 行为修改必须落在 `src/`、`scripts/yaml_generator/`、`tests/` 或文档中 |
-| **不碰构建产物** | `convert.js`、`convert.min.js`、`yamls/` 均由脚本生成，且已被 `.gitignore` 忽略。**不要编辑，也不要提交** |
+| **只改源码** | 行为修改必须落在 `src/`（`src/generated/` 除外）、`scripts/`、`tests/` 或文档中 |
+| **不碰构建产物** | `convert.js`、`convert.min.js`、`convert-honk.js`、`convert-honk.min.js`、`yamls/` 均由脚本生成，且已被 `.gitignore` 忽略。**不要编辑，也不要提交** |
+| **不手写内联产物** | `src/generated/honk-rulesets.ts` 是 `scripts/generate-honk-rulesets.mjs` 的输出，已提交到 git 以保证克隆即可 `npm test`；修改 `ruleset/*.list` 后跑 `npm run build` 自动重写，**不要手工编辑** |
 | **不碰发布分支** | `dist`、`preview` 由 GitHub Actions 生成，禁止向它们提交、合并或手动推送 |
 | **不要合并两份 TypeScript** | `typescript-native`（TS 7）与 `typescript`（TS 6）并存是刻意设计，详见第 8 节 |
 | **保持文档同步** | 新增或修改 URL 参数、代理组行为、构建命令时，同步更新对应文档，详见第 9 节 |
@@ -83,16 +85,20 @@ $arguments
 
 | 路径 | 职责 |
 | --- | --- |
-| `src/main.ts` | JS 覆写入口；读取 `$arguments`、编排流程、暴露 `globalThis.main` |
-| `src/args/` | URL 参数解析；默认值的唯一来源是 `schema.ts` |
+| `src/main.ts` | mihomo/Clash JS 覆写入口；读取 `$arguments`、编排流程、暴露 `globalThis.main` |
+| `src/main-honk.ts` | honk JS 覆写入口；Sub-Store 文件作用域里读 `$content` → 生成 `config.dae` → 写回 `$content`（不注册全局 `main`，避免被 YAML 化）；同时导出 `runHonkEntry()` 供测试直接调用 |
+| `src/args/` | URL 参数解析；mihomo/honk 共用部分的默认值在 `schema.ts`，honk 独有参数的默认值在 `honk-schema.ts` |
 | `src/analysis/` | 节点分类：落地/非落地、国家/地区、低倍率、Tailscale |
 | `src/builders/` | 纯构建函数：候选列表、代理组、规则、DNS、TUN、最终配置 |
-| `src/catalog/` | 声明式数据：组名、图标、国家元数据、服务组、规则集、DNS 常量 |
+| `src/builders/honk/` | honk `config.dae` 策略骨架构建层（filter/groups/rules/dns/render） |
+| `src/catalog/` | 声明式数据：组名、图标、国家元数据、服务组、规则集、DNS 常量、honk 映射 |
 | `src/domain/` | 代理组工厂；字段顺序与空候选兜底集中在此 |
-| `src/types/` | 按域拆分的类型定义：`args` / `proxy` / `clash` |
+| `src/types/` | 按域拆分的类型定义：`args` / `proxy` / `clash` / `honk` |
 | `src/utils/` | 无业务状态的通用工具函数 |
+| `src/generated/` | 编译期内联产物（自维护 ruleset 内容），已提交到 git |
 | `ruleset/` | 项目自维护的规则列表（如 TikTok、E-Hentai、SteamFix） |
-| `scripts/build.mjs` | 用 esbuild 打包 `convert.js` 与压缩版 `convert.min.js` |
+| `scripts/build.mjs` | 一次 esbuild 同时产出 `convert.js` / `convert.min.js` / `convert-honk.js` / `convert-honk.min.js`，开头会先跑一次 ruleset 内联生成 |
+| `scripts/generate-honk-rulesets.mjs` | 把 `ruleset/*.list` 转写为 `src/generated/honk-rulesets.ts` |
 | `scripts/yaml_generator/generator.ts` | 用 `fake_proxies.json` 穷举生成 `yamls/`，固定启用 `regex=true` |
 | `tests/` | 与 `src/` 目录对应的单元测试 |
 | `docs/` | 架构、自定义与贡献文档 |
@@ -115,7 +121,8 @@ $arguments
 | `node --import tsx --test tests/args/parse.test.ts` | 运行单个测试文件 | 路径替换为目标测试即可 |
 | `npm run lint` | ESLint 检查 | `npm run lint:fix` 自动修复 |
 | `npm run format` | Prettier 格式化 | `npm run format:check` 只检查不写入 |
-| `npm run build` | 类型检查 + esbuild 打包 | 生成未压缩 `convert.js` 与压缩版 `convert.min.js` |
+| `npm run build` | 类型检查 + 内联 ruleset + esbuild 打包 | 同时产出 `convert.js` / `convert.min.js` / `convert-honk.js` / `convert-honk.min.js` |
+| `npm run generate:honk-rulesets` | 把 `ruleset/*.list` 内联到 `src/generated/honk-rulesets.ts` | `npm run build` 会自动先跑；手工修改 `.list` 后可单独执行 |
 | `npm run generate` | 生成静态 YAML | **依赖 `convert.js`**；`LIMIT_COMBOS=10 npm run generate` 可限制数量 |
 | `npm run artifacts` | `build` + `generate` | 本地全量产物生成，**不运行测试或 lint** |
 | `npm version patch\|minor\|major` | 发布新版本 | 仅授权者可执行，详见第 11 节 |
@@ -148,7 +155,7 @@ $arguments
    npm run artifacts
    ```
 
-   确认命令无报错，且 `yamls/` 能正常生成。产物仅用于本地验证，**不要提交**。
+   确认命令无报错，且 `yamls/` 能正常生成、`convert-honk.js` 能正常产出（产物预期只包含 `include` + `subscription {}` / `group {}` / `dns {}` / `routing {}` 四段策略，不包含 `global {}` 与 `experimental {}`）。产物仅用于本地验证，**不要提交**。
 
 7. 按第 10 节整理提交并创建 PR。
 
@@ -172,7 +179,10 @@ $arguments
   - 节点分类与地区阈值（`tests/analysis/`）
   - 代理组构造、字段顺序、空组兜底（`tests/builders/`、`tests/domain/`）
   - 规则、DNS、TUN、最终配置组装（`tests/builders/`）
-- 测试不应依赖已生成的 `convert.js` 或 `yamls/`；直接 import 源码模块。
+  - honk 侧的组名/地区映射、filter 拼装、`RULE-SET` 内联与产物内容（`tests/builders/honk/`、`tests/catalog/honk-groups.test.ts`）
+  - honk 独有参数解析（`tests/args/honk-parse.test.ts`）与入口契约（`tests/main-honk.test.ts`）
+  - honk 与 Sub-Store 的对接契约（`tests/substore-scope.test.ts`：复刻 `ScriptOperator.nodeFunc` 的执行方式，断言响应体是裸 `config.dae` 而非 YAML）
+- 测试不应依赖已生成的 `convert.js`、`convert-honk.js` 或 `yamls/`；直接 import 源码模块。（`tests/substore-scope.test.ts` 例外：它用 esbuild 在测试内现场构建 bundle，以验证真实产物行为。）
 
 ---
 
@@ -190,6 +200,9 @@ $arguments
 | 调整代理组字段顺序或空组兜底 | `src/domain/proxy-group.ts` | `tests/domain/proxy-group.test.ts` |
 | 调整 DNS / TUN / full 配置 | `src/builders/dns.ts`、`tun.ts`、`full-config.ts` | 对应测试与 `README.md` |
 | 调整静态 YAML 生成 | `scripts/yaml_generator/generator.ts`、`fake_proxies.json` | `README.md` 中的文件命名与说明 |
+| 新增/修改 honk 独有参数 | `src/types/honk.ts`、`src/args/honk-schema.ts`、`src/args/honk-parse.ts`、`src/builders/honk/*` | `README.md` honk 参数表、`src/main-honk.ts` 顶部 banner、`tests/args/honk-parse.test.ts`；仅限“策略”相关字段（订阅/组 policy/DNS），部署层参数（网卡/面板/内核相关）写到 `system.dae`，不进本项目 |
+| 新增/调整 honk 输出（组/地区/映射/policy） | `src/builders/honk/`、`src/catalog/honk-groups.ts` | `README.md` honk 章节、`docs/ARCHITECTURE.md` 的 honk 语义映射表；新增代理组/地区时需同步补 `HONK_GROUP_NAMES` / `HONK_COUNTRY_CODES` 与 `ICONS`；自动类组默认 policy=`score`，改默认时同步改 `HONK_POLICIES` 与 `HONK_ARG_DEFAULTS.policy` |
+| 修改自维护 `ruleset/*.list` | 直接改 `ruleset/*.list`；新键时补 `scripts/generate-honk-rulesets.mjs` 的 `OWNED_RULESETS` | `npm run build` 后提交自动重生成的 `src/generated/honk-rulesets.ts` |
 | 更新架构或数据流 | `docs/ARCHITECTURE.md` | 必要时同步 `README.md` |
 
 更多自定义示例见 [`docs/HOW_TO_CUSTOMISE.md`](docs/HOW_TO_CUSTOMISE.md)。
@@ -237,6 +250,7 @@ $arguments
 | --- | --- |
 | 新增/修改 URL 参数、默认值或开关行为 | `README.md` 参数说明、`src/main.ts` 顶部 banner、`docs/ARCHITECTURE.md` 的默认值说明 |
 | 代理组结构、展平模式、链式代理、Tailscale 行为变化 | `README.md` 相关章节、`docs/ARCHITECTURE.md` |
+| honk 输出的参数、丢弃字段、语义映射变化 | `README.md` honk 章节、`src/main-honk.ts` 顶部 banner、`docs/ARCHITECTURE.md` 的 honk 语义映射表、`docs/HOW_TO_CUSTOMISE.md` 的自定义 honk 输出 |
 | 新增或调整自定义入口 | `docs/HOW_TO_CUSTOMISE.md` |
 | 开发命令、流程、规范变化 | `docs/HOW_TO_CONTRIBUTE.md` 与本文件 |
 | 架构、模块职责、数据流变化 | `docs/ARCHITECTURE.md` |
@@ -262,7 +276,7 @@ $arguments
   - `revert:` 回滚
 - 提交信息统一使用英文，保持简短、说明「做了什么」。
 - 一个提交只做一件事；功能改动与文档改动用多个提交分开。
-- **不要提交** `convert.js`、`convert.min.js`、`yamls/` 或任何本地生成文件。
+- **不要提交** `convert.js`、`convert.min.js`、`convert-honk.js`、`convert-honk.min.js`、`yamls/` 或任何本地生成文件；`src/generated/honk-rulesets.ts` **例外**，它需要跟 `.list` 修改一同提交。
 - PR 合并前，CI 会检查：
   - `npm run typecheck`
   - `npm run format:check`
@@ -322,7 +336,7 @@ npm version major   # 不兼容的变更
 | `format:check` 失败 | 运行 `npm run format` 后重新检查 |
 | `lint` 报 TypeScript 版本相关错误 | 检查是否误升级/删除了 `typescript@6`；ESLint 依赖它，不能只用 TS 7 |
 | `typecheck` 行为异常 | 确认使用 `npm run typecheck`（走 `typescript-native`），不要直接运行 `npx tsc` |
-| 产物改动后 `git status` 看不到 | `convert.js`、`convert.min.js`、`yamls/` 已被忽略，这是预期行为 |
+| 产物改动后 `git status` 看不到 | `convert.js`、`convert.min.js`、`convert-honk.js`、`convert-honk.min.js`、`yamls/` 已被忽略，这是预期行为；`src/generated/honk-rulesets.ts` 不在忽略列表，重生成后需要提交 |
 | 想改产物里的逻辑 | 回到 `src/` 修改源码并重新构建，不要直接编辑产物 |
 
 ---
@@ -334,7 +348,7 @@ npm version major   # 不兼容的变更
 - [ ] `npm run lint` 通过。
 - [ ] `npm run typecheck` 通过。
 - [ ] `npm test` 通过。
-- [ ] `npm run artifacts` 能成功生成产物。
-- [ ] 新增/修改的 URL 参数已同步到 `README.md` 与 `src/main.ts` banner。
+- [ ] `npm run artifacts` 能成功生成产物（包括 `convert-honk.js` 与 `convert-honk.min.js`）。
+- [ ] 新增/修改的 URL 参数已同步到 `README.md` 与 `src/main.ts` / `src/main-honk.ts` banner。
 - [ ] 行为变化已同步到 `docs/ARCHITECTURE.md`，自定义入口变化已同步到 `docs/HOW_TO_CUSTOMISE.md`。
 - [ ] 提交信息使用了 Conventional Commits 前缀，**提交信息使用英文**。
