@@ -48,7 +48,7 @@ npm run format:check && npm run lint && npm run typecheck && npm test && npm run
 | --- | --- | --- |
 | JS 动态覆写（mihomo/Clash） | `src/main.ts` → `convert.js` / `convert.min.js` | 主推方式；`main(config)` 返回 Clash 配置对象，Sub-Store 序列化为 YAML |
 | 静态 YAML 覆写 | `scripts/yaml_generator/generator.ts` → `yamls/*.yaml` | 备用方式；用假节点穷举参数组合，适合不能执行 JS 的 Clash 客户端 |
-| honk 动态覆写 | `src/main-honk.ts` → `convert-honk.js` / `convert-honk.min.js` | 面向 [honk](https://github.com/daeuniverse/honk)（dae 语法、eBPF 代理）；`main(config)` 返回 `config.dae` **字符串**，Sub-Store 原样吐出；只写策略骨架（subscription/group/dns/routing/assets），`global` 与 `experimental` 交给同目录下的 `system.dae`（通过顶部 `include { system.dae }` 引入） |
+| honk 动态覆写 | `src/main-honk.ts` → `convert-honk.js` / `convert-honk.min.js` | 面向 [honk](https://github.com/daeuniverse/honk)（dae 语法、eBPF 代理）；绑在 Sub-Store 的「文件」上，在文件作用域里读 `$content`（上游 Clash 配置）、生成 `config.dae` 并写回 `$content`，Sub-Store 原样吐出（**不能**走 `main(config)` 返回值那条路，会被 `YAML.safeDump` 包成 `|-` 块标量）；只写策略骨架（subscription/group/dns/routing/assets），`global` 与 `experimental` 交给同目录下的 `system.dae`（通过顶部 `include { system.dae }` 引入） |
 
 三种形式共享 `src/catalog/` 与 `src/args/`、`src/analysis/` 的主逻辑（参数解析与节点分类），区别只在数据来源与构建层（Clash 侧 `src/builders/*`，honk 侧 `src/builders/honk/*`）。详见 [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md)。
 
@@ -86,7 +86,7 @@ $arguments
 | 路径 | 职责 |
 | --- | --- |
 | `src/main.ts` | mihomo/Clash JS 覆写入口；读取 `$arguments`、编排流程、暴露 `globalThis.main` |
-| `src/main-honk.ts` | honk JS 覆写入口；`main(config)` 返回 `config.dae` 字符串；同时导出 `runHonkEntry()` 供测试直接调用 |
+| `src/main-honk.ts` | honk JS 覆写入口；Sub-Store 文件作用域里读 `$content` → 生成 `config.dae` → 写回 `$content`（不注册全局 `main`，避免被 YAML 化）；同时导出 `runHonkEntry()` 供测试直接调用 |
 | `src/args/` | URL 参数解析；mihomo/honk 共用部分的默认值在 `schema.ts`，honk 独有参数的默认值在 `honk-schema.ts` |
 | `src/analysis/` | 节点分类：落地/非落地、国家/地区、低倍率、Tailscale |
 | `src/builders/` | 纯构建函数：候选列表、代理组、规则、DNS、TUN、最终配置 |
@@ -181,7 +181,8 @@ $arguments
   - 规则、DNS、TUN、最终配置组装（`tests/builders/`）
   - honk 侧的组名/地区映射、filter 拼装、`RULE-SET` 内联与产物内容（`tests/builders/honk/`、`tests/catalog/honk-groups.test.ts`）
   - honk 独有参数解析（`tests/args/honk-parse.test.ts`）与入口契约（`tests/main-honk.test.ts`）
-- 测试不应依赖已生成的 `convert.js`、`convert-honk.js` 或 `yamls/`；直接 import 源码模块。
+  - honk 与 Sub-Store 的对接契约（`tests/substore-scope.test.ts`：复刻 `ScriptOperator.nodeFunc` 的执行方式，断言响应体是裸 `config.dae` 而非 YAML）
+- 测试不应依赖已生成的 `convert.js`、`convert-honk.js` 或 `yamls/`；直接 import 源码模块。（`tests/substore-scope.test.ts` 例外：它用 esbuild 在测试内现场构建 bundle，以验证真实产物行为。）
 
 ---
 

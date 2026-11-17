@@ -239,7 +239,10 @@ https://git.l3zc.com/powerfullz/override-rules/raw/branch/dist/yamls/config_gt-0
 
 ### 关于 honk 客户端的动态覆写（convert-honk.min.js）
 
-[honk](https://github.com/daeuniverse/honk) 是 dae 的 Rust + eBPF 重写（Linux 6.12+，常见于 OpenWrt / 软路由），配置文件为 `config.dae`（dae 语法），与 Clash/Mihomo 的 YAML 存在语义鸿沟。本项目为 honk 提供一个与 `convert.min.js` **同构**的动态覆写入口 `convert-honk.min.js`：同样绑到 Sub-Store 里作为 JS Override，`main(config)` 拿到上游 Clash 对象后**直接返回一段 `config.dae` 文本**，Sub-Store 会把字符串原样吐到响应体，honk `wget` 下来就是能用的策略骨架。
+[honk](https://github.com/daeuniverse/honk) 是 dae 的 Rust + eBPF 重写（Linux 6.12+，常见于 OpenWrt / 软路由），配置文件为 `config.dae`（dae 语法），与 Clash/Mihomo 的 YAML 存在语义鸿沟。本项目为 honk 提供一个与 `convert.min.js` **操作路径完全一致**的动态覆写入口 `convert-honk.min.js`：同样绑在 Sub-Store 的「文件」上，拿到上游 Clash 配置后生成一段 `config.dae` 文本，Sub-Store 把它原样作为响应体吐出，honk `wget` 下来就是能用的策略骨架。
+
+> **为什么 honk 脚本不跟 mihomo 一样返回对象？**
+> Sub-Store 在「Clash Config」类型的文件上会执行 `YAML.safeDump(await main(config))`——返回字符串会被包成 `|-` 块标量，honk 解析不了。因此 honk 脚本改为在 Sub-Store 的**文件作用域**里直接写回 `$content`（脚本被原样内联进 `operator`，`$content` 就是响应体），并且**不注册全局 `main`**，避免被 YAML 化。详见 [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md#honk-动态覆写convert-honkjs)。
 
 #### 产物只包含策略骨架
 
@@ -255,26 +258,33 @@ include {
 
 #### 使用流程
 
+操作路径与 mihomo 覆写**一模一样**：都是 Sub-Store 里的「文件」+「脚本操作」。
+
 1. **先在路由器上创建 `/etc/honk/system.dae`**，写入 `global {}` 与 `experimental {}` 两段（参考下面的参考模板）。
-2. 在 Sub-Store 里新建 Override，Source 选 URL：
+2. 在 Sub-Store 里新建一个「文件」：
+   - 类型选 **「Clash Config」**；
+   - 来源选 **组合订阅**（和 mihomo 那边用的是同一份 collection）。
+3. 给这个「文件」加一条「脚本操作」，Source 选 URL：
    ```
-   https://cdn.jsdelivr.net/gh/powerfullz/override-rules/convert-honk.min.js#subscription=<url-encoded-sub>
+   https://cdn.jsdelivr.net/gh/powerfullz/override-rules/convert-honk.min.js
    ```
-3. 新建一个专给 honk 用的 Subscription（可以直接复用你现有的 collection），把上面的 Override 绑上去。
-4. 客户端 GET 这个 Subscription 的 download URL，返回的就是 `config.dae` 全文：
+   参数写在 URL 的 `#` 后面（可选），例如 `#grouptype=1&sub-interval=3600s`。
+4. 客户端 GET 这个**文件**的 download URL，返回的就是 `config.dae` 全文：
    ```bash
-   wget -qO /etc/honk/config.dae.new "https://substore.example/xxx/api/subscription/<id>/download" \
+   wget -qO /etc/honk/config.dae.new "https://substore.example/xxx/api/file/<文件名>" \
      && honk-core config validate --config /etc/honk/config.dae.new \
      && mv /etc/honk/config.dae.new /etc/honk/config.dae \
      && kill -HUP $(pidof honk-core)
    ```
+
+> **订阅地址会自动关联**：脚本会从当前下载请求的地址反推出 Sub-Store 基础地址，再结合「文件」的来源（组合订阅名 / 单条订阅名）拼出 `subscription { my_sub: '…/download/collection/<name>' }`，你**不需要**手抄下载地址。显式传 `#subscription=` 时以你传的为准；反推不出来时可以用 `#sub-base=<基础地址>` 手动指定。
 
 #### 骨架与订阅两条链分开
 
 - **骨架**（本文件生成的 `config.dae` 本身）：**一次性 curl**。改参数、改分流规则才需要重跑；一年改不了几次。
 - **节点集合**（骨架里 `subscription {}` 那个 URL）：honk **原生定时重拉**（默认 `interval: 86400s`，可通过 `#sub-interval=3600s` 缩短），机场加/减节点你不需要动 honk 或 Sub-Store，到点自己刷。想立刻刷新：`kill -HUP $(pidof honk-core)`。
 
-推荐 `subscription` 参数指向**你现有 mihomo 那边用的 Sub-Store collection 下载 URL**（已经带 `include/exclude/prefer` 处理过的那份 Clash YAML）——两条链共用同一个上游，honk/mihomo 拿到的节点集合天然一致；`config.dae` 里的 `filter: name(regex: '…')` 会再对节点名字做二次匹配落到不同策略组。
+`subscription {}` 指向的就是**你现有 mihomo 那边用的那份组合订阅下载地址**（已经带 `include/exclude/prefer` 处理过）——两条链共用同一个上游，honk/mihomo 拿到的节点集合天然一致；`config.dae` 里的 `filter: name(regex: '…')` 会再对节点名字做二次匹配落到不同策略组。
 
 #### honk 支持的传参
 
@@ -296,8 +306,8 @@ URL hash 里的参数用 `&` 分隔，与 mihomo 侧完全兼容。分三类：*
 
 订阅：
 
-- `subscription`（**关键**）：honk 会按 interval 自动重拉的订阅 URL。**建议 URL 编码后传入**（Sub-Store hash 里含 `:` `?` `&` 会破坏解析），本覆写会自动 decode 一次。例：`subscription=https%3A%2F%2Fsub.example%2Ftoken`。缺省时产物里写占位 `https://example.com/your-subscription` 并带一行提示。
-- `sub-base`（**自动关联**）：SubStore 服务的基础地址（host + 后端路径，不含 `/download/...`）。传入后，覆写脚本会结合 SubStore 注入到脚本作用域的当前文件来源（`$file.sourceType` / `$file.sourceName`）自动拼出订阅下载地址——`collection` 拼成 `/download/collection/<name>`、`subscription` 拼成 `/download/<name>`，省去手工写完整 `subscription`。**显式 `subscription` 仍优先**；仅当 `sub-base` 与来源信息同时存在时才生效，否则回退占位 URL。例：`sub-base=http%3A%2F%2Fsub.192-168-1-184.nip.io%2FtdtVuezFG`（内网 SubStore 用 http 是刻意为之）。
+- `subscription`（**可选**）：honk 会按 interval 自动重拉的订阅 URL。**不传也能用**——覆写会自动关联出你那份组合订阅的下载地址（见下面 `sub-base`）。需要手工指定时才传，**建议 URL 编码后传入**（Sub-Store hash 里含 `:` `?` `&` 会破坏解析），本覆写会自动 decode 一次。例：`subscription=https%3A%2F%2Fsub.example%2Ftoken`。三处都拿不到时产物里写占位 `https://example.com/your-subscription` 并带一行提示。
+- `sub-base`（**一般不用传**）：SubStore 服务的基础地址（host + 后端路径，不含 `/download/...`）。脚本会先从当前下载请求的地址反推这个基础地址（`/api/file/<name>` → 基础地址），再结合 SubStore 注入到脚本作用域的当前文件来源（`$file.sourceType` / `$file.sourceName`）自动拼出订阅下载地址——`collection` 拼成 `/download/collection/<name>`、`subscription` 拼成 `/download/<name>`，省去手工写完整 `subscription`。反推失败（比如通过定时同步而非直接下载触发）时，用它手动指定。**显式 `subscription` 仍优先**。例：`sub-base=http%3A%2F%2Fsub.192-168-1-184.nip.io%2FtdtVuezFG`（内网 SubStore 用 http 是刻意为之）。
 - `subtag`：订阅 tag 名，默认 `my_sub`；honk 里的 `subtag(...)` 过滤器可以按它精确挑节点。
 - `sub-interval`：拉订阅间隔，默认 `86400s`；honk 接受 `30m` / `1h` / 秒数等格式。
 - `sub-route`：拉订阅的出口，默认 `direct`；也可以是某个组名（比如 `Select`），首次启动时如果这个组还没有可用节点会拉取失败——推荐保持 `direct`。
@@ -344,24 +354,25 @@ DNS：
 
 #### 完整 URL 示例
 
-假设你现有 mihomo 用的 Sub-Store collection 下载 URL 是 `https://substore.example/sadsd/download/abc?target=xyz`，想给 honk 用同一份订阅，且：
+假设你在 Sub-Store 里有一个「文件」（类型「Clash Config」、来源是组合订阅 `full`），想给 honk 用同一份订阅，且：
 
 - 自动类组走默认的 `score`（不写 `policy=` 就是 `score`）；
 - 排除 E-Hentai 与微博；
 - 每小时刷一次订阅；
 - URLTest 组空闲 30 分钟就停探测。
 
-对应的 Sub-Store Override URL：
+对应的 Sub-Store「脚本操作」URL：
 
 ```text
 https://cdn.jsdelivr.net/gh/powerfullz/override-rules/convert-honk.min.js
-  #subscription=https%3A%2F%2Fsubstore.example%2Fsadsd%2Fdownload%2Fabc%3Ftarget%3Dxyz
-  &exclude=EHentai,Weibo
+  #exclude=EHentai,Weibo
   &sub-interval=3600s
   &idle-timeout=1800
 ```
 
 （示例里的换行只是为了看，实际写在同一行）。
+
+`subscription {}` 里的地址由脚本自动关联成 `https://substore.example/sadsd/download/collection/full`——不需要手写。若脚本运行在定时同步等拿不到请求地址的场景，自动关联会失败，这时补一个 `#sub-base=https://substore.example/sadsd` 即可。
 
 #### system.dae 参考
 

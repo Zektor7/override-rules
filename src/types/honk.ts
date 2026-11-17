@@ -12,8 +12,14 @@
  * `global {}` 与 `experimental {}` 属于机器/部署参数，交给用户的 `system.dae`，
  * 生成的 `config.dae` 顶部固定 `include { system.dae }`。
  *
- * honk 覆写以 `main(config) => string` 形式返回 `config.dae` 文本，
- * 交给 Sub-Store 原样吐出。
+ * honk 覆写有两种入口，对应 Sub-Store 的两种脚本作用域：
+ * - **文件作用域**（Sub-Store 把脚本原样内联进 `operator` 函数体）：脚本自己
+ *   读 `$content`（上游 Clash 配置 YAML）、生成 `config.dae`、再写回 `$content`。
+ *   这是 Sub-Store 唯一能原样吐出非 YAML 文本的通道 —— `mihomoConfig` 类型会把
+ *   `main()` 的返回值交给 `YAML.safeDump`，字符串会被包成 `|-` 块标量。
+ * - **独立调用**（`main(config) => string`）：供单元测试与自建工具链使用。
+ *
+ * 两种入口共用同一份生成逻辑，见 `builders/honk/script.ts`。
  */
 
 import type { FeatureFlags } from "./args";
@@ -79,12 +85,27 @@ export interface HonkScriptArgs {
  * 本接口只取自动关联订阅连接所需的字段。
  */
 export interface HonkFileContext {
-    /** 文件类型：`mihomoConfig` / `mihomoProfile` 等。 */
+    /** 文件类型：`mihomoConfig` / `mihomoProfile` / `file` 等。 */
     type?: string;
     /** 文件来源类型：`subscription` / `collection` / `local` / `remote` / `none`。 */
     sourceType?: string;
     /** 文件来源名称（单条订阅名或组合订阅名）。 */
     sourceName?: string;
+    /** 文件自身的远程地址；「文件」类型下通常就是组合订阅的下载链接。 */
+    url?: string;
+}
+
+/**
+ * Sub-Store 在文件作用域注入的 `$options._req`：当前 HTTP 请求的快照。
+ *
+ * 用于反推 Sub-Store 服务的基础地址（协议 + host + 后端路径前缀），从而在
+ * 不额外传 `sub-base` 的情况下拼出组合订阅的下载地址。
+ */
+export interface HonkRequestContext {
+    /** 请求路径（可能带查询串）；Sub-Store 传的是 `req.url`。 */
+    url?: string;
+    /** 请求头；`host` 与 `x-forwarded-proto` 用于还原基础地址。 */
+    headers?: Record<string, string | string[] | undefined>;
 }
 
 /** 解析后的 honk 运行时参数集合，构建层只关心这里的强类型字段。 */

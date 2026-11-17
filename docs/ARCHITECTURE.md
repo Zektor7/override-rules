@@ -95,11 +95,11 @@ flowchart TD
 | `src/utils/regex.ts` | 正则匹配工具 | `createCaseInsensitiveNodeMatcher()` |
 | `scripts/yaml_generator/generator.ts` | 静态 YAML 覆写文件生成器 | 穷举参数组合，生成 `yamls/` 目录下的 192 个 YAML 配置文件；支持 `LIMIT_COMBOS` 限制生成数量 |
 | `src/catalog/honk-groups.ts` | honk 输出专用的组名/策略/地区映射 | `HONK_GROUP_NAMES`, `HONK_POLICIES`, `toHonkName()`, `requireHonkName()`, `honkCountryName()` |
-| `src/types/honk.ts` | honk 构建层需要的类型 | `HonkScriptArgs`, `HonkRuntimeOptions`, `HonkBuildContext`, `InlineRuleSetMap`, `HonkGroupSpec` |
+| `src/types/honk.ts` | honk 构建层需要的类型 | `HonkScriptArgs`, `HonkFileContext`, `HonkRequestContext`, `HonkRuntimeOptions`, `HonkBuildContext`, `InlineRuleSetMap`, `HonkGroupSpec` |
 | `src/args/honk-schema.ts` | honk 独有参数的默认值 | `HONK_ARG_DEFAULTS` |
-| `src/args/honk-parse.ts` | honk 独有参数的解析 | `buildHonkRuntimeOptions()` |
-| `src/builders/honk/` | honk `config.dae` 文本构建层 | `filter.ts` 生成 filter 表达式；`groups/rules/dns/assets.ts` 分段渲染；`render.ts` 拼装 banner + `include { system.dae }` + 五段策略 |
-| `src/main-honk.ts` | honk 覆写的运行时入口（`convert-honk.js` / `convert-honk.min.js`） | `globalThis.main = (config) => string`；同时导出 `runHonkEntry()` 供测试直接调用 |
+| `src/args/honk-parse.ts` | honk 独有参数的解析 | `buildHonkRuntimeOptions()`；内部按「显式 subscription → 文件下载地址 → 基础地址+来源」解析订阅 URL |
+| `src/builders/honk/` | honk `config.dae` 文本构建层 | `filter.ts` 生成 filter 表达式；`groups/rules/dns/assets.ts` 分段渲染；`render.ts` 拼装 banner + `include { system.dae }` + 五段策略；`script.ts` 共享生成逻辑；`file-scope.ts` Sub-Store 文件作用域胶水（读 `$content` → 写回 `$content`） |
+| `src/main-honk.ts` | honk 覆写的运行时入口（`convert-honk.js` / `convert-honk.min.js`） | Sub-Store 文件作用域入口 `applyFileScope()`；非 Sub-Store 环境才注册 `globalThis.main`；同时导出 `runHonkEntry()` 供测试直接调用 |
 | `src/generated/honk-rulesets.ts` | 自维护 `ruleset/*.list` 的编译期内联产物 | `INLINED_HONK_RULESETS`；由 `scripts/generate-honk-rulesets.mjs` 写入，已提交到 git |
 | `scripts/generate-honk-rulesets.mjs` | 将 `ruleset/*.list` 转写为 `src/generated/honk-rulesets.ts` | `npm run generate:honk-rulesets`；`npm run build` 会自动先跑一次 |
 | `tests/` | 轻量单元测试（`node --import tsx --test`） | 覆盖参数解析、节点分类、代理组构造、规则/DNS/TUN、最终组装 |
@@ -249,9 +249,42 @@ YAML 模式的特点：
 
 ### honk 动态覆写（convert-honk.js）
 
-**面向 [daeuniverse/honk](https://github.com/daeuniverse/honk) 客户端的产物**（honk 是 dae 的 Rust + eBPF 重写，配置语法沿用 dae，文件后缀 `.dae`）。honk 本身不执行 JS、也不能从 URL 拉 `config.dae` 本体，但 Sub-Store 侧完全可以把 JS 返回的字符串直接当响应体吐出来。本项目的 honk 入口 `src/main-honk.ts` 与 Clash 侧的 `src/main.ts` **同构**，`main(config)` 返回 `string`，Sub-Store 会把它原样输出，honk `wget` 拉下来就是能用的 `config.dae`。
+**面向 [daeuniverse/honk](https://github.com/daeuniverse/honk) 客户端的产物**（honk 是 dae 的 Rust + eBPF 重写，配置语法沿用 dae，文件后缀 `.dae`）。honk 本身不执行 JS、也不能从 URL 拉 `config.dae` 本体，但 Sub-Store 侧可以把文件作用域里的 `$content` 原样当响应体吐出来。本项目的 honk 入口 `src/main-honk.ts` 与 Clash 侧的 `src/main.ts` **共用同一套参数解析与节点分类**，分叉只在「产物是什么」与「怎么把产物送出去」。
 
 与 mihomo 分支共享：参数解析 `buildFeatureFlags` / 节点分类 `analyzeNodes` / 国家与服务目录 `catalog/countries` / `catalog/service-groups` / `catalog/rule-sets` / `catalog/low-cost`；分叉点只在构建层：mihomo 走 `builders/{config,proxy-groups,rules,dns,tun,sniffer,full-config,geox}.ts`，honk 走 `builders/honk/*`。
+
+#### 输出通道：为什么 honk 不能像 mihomo 那样返回对象
+
+mihomo 覆写返回**对象**，Sub-Store 用 `YAML.safeDump(main(config))` 序列化，得到 Clash YAML——这正是 mihomo 要的。honk 要的是 `config.dae` 文本，它**不是 YAML**，走同一条路只会被包成 `|-` 块标量，honk 解析不了。
+
+Sub-Store 实际执行脚本的位置是 `ScriptOperator.nodeFunc`：脚本被**原样内联**进 `operator` 函数体，文件作用域里拿到 `$content` / `$files` / `$options` / `$file`，执行完 `$content` 就是响应体。于是 honk 走这条通道：
+
+```
+SubStore  ScriptOperator.nodeFunc
+   │  if ($file.type ∈ {mihomoConfig, mihomoProfile}) {
+   │      <脚本原样内联>
+   │      if (typeof main === 'function')            ← 只有全局有 main 才会进
+   │          $content = YAML.safeDump(await main(config))   ← 会把文本 YAML 化
+   │  } else {
+   │      <脚本原样内联>                              ← 「文件」类型走这里
+   │  }
+   ▼
+convert-honk.js  在文件作用域里：读 $content（上游 Clash YAML）→ 生成 config.dae → 写回 $content
+```
+
+对应到代码：
+
+| 环节 | 位置 |
+| --- | --- |
+| 判定是否在 Sub-Store 作用域 | `src/main-honk.ts::isSubStoreScope()`（`typeof $arguments !== "undefined"`） |
+| 文件作用域入口 | `src/main-honk.ts::applyFileScope()` |
+| 抑制全局 `main` | `src/main-honk.ts::suppressGlobalMainLookup()`——把 `globalThis.main` 置空，避免被 `safeDump` 覆盖（mihomo 脚本每次运行会重新注册自己的 `main`，互不影响） |
+| 解析上游内容取节点 | `src/builders/honk/file-scope.ts::buildHonkFileScope()`——优先用 Sub-Store 注入的 `yaml` 解析 Clash 配置，退化时用 `ProxyUtils.parse` |
+| 共享生成逻辑 | `src/builders/honk/script.ts::buildHonkFromConfig()`（`main(config)` 与文件作用域共用） |
+
+**注意**：脚本挂在订阅/组合订阅（节点列表作用域）时不会生效——那里逐节点执行脚本，没有 `$content`。此时脚本会在日志里提示一次「请挂到文件上」。
+
+`tests/substore-scope.test.ts` 完整复刻了 Sub-Store 的 `nodeFunc` 执行方式（含 `safeDump(await main(config))` 分支），用真实构建产物断言「响应体是裸 `config.dae`、不是 YAML、也没有 `|-` 前缀」。
 
 #### 只输出策略骨架，不输出部署层
 
@@ -281,15 +314,29 @@ honk 入口的 `$arguments` 同时包含三类参数，互不干扰：
 
 两个解析器都只取自己关心的键，多余字段自然丢弃；honk 入口先跑 `buildFeatureFlags` 得到 `flags`，再把 `flags` 一并传给 `buildHonkRuntimeOptions(args, flags)`，用于 `#policy` 缺省时回退到 `HONK_POLICIES[flags.groupType]`（默认 grouptype=1 → `score`）。完整的 honk 参数列表与默认值见 [`README.md`](../README.md#honk-支持的传参)。
 
-#### 订阅连接自动关联（`sub-base` + `$file`）
+#### 订阅连接自动关联（请求地址反推 + `$file`）
 
-honk 没有 rule-provider，节点更新靠 `subscription {}` 里的 URL 定时重拉；手动传完整 `#subscription=<url>` 又要在 SubStore 里复制一份下载地址，改 URL 后容易忘了同步。因此 honk 入口在 `subscription` 之外额外支持 `sub-base`：
+honk 没有 rule-provider，节点更新靠 `subscription {}` 里的 URL 定时重拉；手动传完整 `#subscription=<url>` 又要在 SubStore 里复制一份下载地址，改 URL 后容易忘了同步。因此订阅地址按下面的优先级自动解析（`args/honk-parse.ts::resolveSubscriptionUrl()`）：
 
-- SubStore 的 `ScriptOperator` 在文件处理作用域（`nodeFunc` 的 `let { $content, $files, $options, $file } = input`）会把当前文件元数据以局部变量 `$file` 注入到脚本作用域，其中 `$file.sourceType`（`collection` / `subscription` / `local` / `remote` / `none`）与 `$file.sourceName`（订阅名/组合订阅名）可用于反推「这份覆写绑在哪份来源上」；
-- `src/main-honk.ts` 通过 `typeof $file !== "undefined" && $file != null` 守卫安全读取（单测与非文件场景不存在该变量，`typeof` 不抛错），并把 `fileContext` 透传给 `buildHonkRuntimeOptions(args, flags, fileContext)`；
-- `resolveSubscriptionUrl` 按优先级取最终订阅 URL：显式 `#subscription=` → `#sub-base=` 拼接 `$file`（collection → `/download/collection/<name>`，subscription → `/download/<name>`；`local`/`remote`/`none` 无独立下载地址则不拼接）→ 占位 URL。
+| 优先级 | 来源 | 说明 |
+| --- | --- | --- |
+| 1 | 显式 `#subscription=` | 永远胜出 |
+| 2 | 文件自身的下载地址（`$file.url`） | 「文件」类型下用户填的远程 URL 本身就是 SubStore 下载链接，去掉查询串即可 |
+| 3 | 基础地址 + `$file` 来源 | 基础地址 = `#sub-base=` 或**从当前下载请求反推**；来源 = `$file.sourceType` / `$file.sourceName` |
+| 4 | 占位 URL | `https://example.com/your-subscription`，产物里带提示 |
 
-优先级设计保证旧行为不受影响：显式 `subscription` 永远胜出；只有 `sub-base` 与 `$file` 来源信息同时存在时才走自动拼接。
+第 3 条里的「反推」是自动化关联的关键：SubStore 处理文件下载时会把当前请求快照放进 `$options._req`（`url` + `headers`）。文件下载路由是 `/api/file/<name>`（分享路由是 `/share/file/<name>`），把这一段去掉剩下的就是服务基础地址：
+
+```
+请求 URL   http://sub.192-168-1-184.nip.io/tdtVuezFG/api/file/honk
+Host 头    sub.192-168-1-184.nip.io
+反推基础   http://sub.192-168-1-184.nip.io/tdtVuezFG
+拼出订阅   http://sub.192-168-1-184.nip.io/tdtVuezFG/download/collection/full
+```
+
+协议优先取 `x-forwarded-proto`（反向代理场景），其余按 `http` 处理。`$file.sourceType` 为 `collection` 时拼 `/download/collection/<name>`，`subscription` 时拼 `/download/<name>`；`local`/`remote`/`none` 没有独立可重拉地址，不参与拼接。
+
+因此**正常使用时一个参数都不用传**：把脚本挂到「文件」上，产物里的 `subscription { my_sub: '…/download/collection/<name>' }` 就已经指向你那份组合订阅。只有在定时同步等拿不到请求地址的场景才需要手动补 `#sub-base=`。
 
 #### 自动选择类组的默认策略：score
 

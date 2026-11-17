@@ -4,7 +4,7 @@ import { describe, it } from "node:test";
 import { buildFeatureFlags } from "../../src/args/parse";
 import { buildHonkRuntimeOptions } from "../../src/args/honk-parse";
 import { HONK_ARG_DEFAULTS } from "../../src/args/honk-schema";
-import type { HonkFileContext, HonkScriptArgs } from "../../src/types/honk";
+import type { HonkFileContext, HonkRequestContext, HonkScriptArgs } from "../../src/types/honk";
 import type { ScriptArgs } from "../../src/types/args";
 
 type Args = ScriptArgs & HonkScriptArgs;
@@ -248,5 +248,111 @@ describe("buildHonkRuntimeOptions 订阅连接自动关联（sub-base + $file）
             }
         );
         assert.equal(opts.subscriptionUrl, `${BASE}/download/collection/full`);
+    });
+});
+
+describe("buildHonkRuntimeOptions 订阅连接自动关联（$options._req 反推基础地址）", () => {
+    const FILE: HonkFileContext = { sourceType: "collection", sourceName: "full" };
+
+    function parseWithRequest(args: Args, requestContext: HonkRequestContext | null) {
+        const flags = buildFeatureFlags(args);
+        return buildHonkRuntimeOptions(args, flags, FILE, requestContext);
+    }
+
+    it("从文件下载请求地址反推基础地址并拼出组合订阅下载地址", () => {
+        const opts = parseWithRequest(
+            {},
+            {
+                url: "/tdtVuezFG/api/file/honk",
+                headers: { host: "sub.192-168-1-184.nip.io" },
+            }
+        );
+        assert.equal(
+            opts.subscriptionUrl,
+            "http://sub.192-168-1-184.nip.io/tdtVuezFG/download/collection/full"
+        );
+    });
+
+    it("分享路由同样能反推基础地址", () => {
+        const opts = parseWithRequest(
+            {},
+            {
+                url: "/tdtVuezFG/share/file/honk",
+                headers: { host: "sub.192-168-1-184.nip.io" },
+            }
+        );
+        assert.equal(
+            opts.subscriptionUrl,
+            "http://sub.192-168-1-184.nip.io/tdtVuezFG/download/collection/full"
+        );
+    });
+
+    it("反向代理场景按 x-forwarded-proto 还原协议", () => {
+        const opts = parseWithRequest(
+            {},
+            {
+                url: "/tdtVuezFG/api/file/honk",
+                headers: {
+                    host: "sub.example.com",
+                    "x-forwarded-proto": "https",
+                },
+            }
+        );
+        assert.equal(
+            opts.subscriptionUrl,
+            "https://sub.example.com/tdtVuezFG/download/collection/full"
+        );
+    });
+
+    it("请求地址是完整 URL 时同样能反推", () => {
+        const opts = parseWithRequest(
+            {},
+            {
+                url: "http://sub.example.com/base/api/file/honk",
+                headers: {},
+            }
+        );
+        assert.equal(opts.subscriptionUrl, "http://sub.example.com/base/download/collection/full");
+    });
+
+    it("缺 host 头时反推失败，回退占位 URL", () => {
+        const opts = parseWithRequest({}, { url: "/tdtVuezFG/api/file/honk" });
+        assert.equal(opts.subscriptionUrl, HONK_ARG_DEFAULTS.subscriptionUrl);
+    });
+
+    it("显式 sub-base 优先于请求地址反推", () => {
+        const opts = parseWithRequest(
+            { "sub-base": "http://explicit.example/base" },
+            {
+                url: "/tdtVuezFG/api/file/honk",
+                headers: { host: "sub.192-168-1-184.nip.io" },
+            }
+        );
+        assert.equal(opts.subscriptionUrl, "http://explicit.example/base/download/collection/full");
+    });
+
+    it("文件自身的下载链接优先于一切自动关联", () => {
+        const flags = buildFeatureFlags({});
+        const opts = buildHonkRuntimeOptions(
+            {},
+            flags,
+            {
+                type: "file",
+                url: "http://sub.example.com/base/download/collection/full?target=clash",
+            },
+            null
+        );
+        assert.equal(opts.subscriptionUrl, "http://sub.example.com/base/download/collection/full");
+    });
+
+    it("文件地址不是下载链接时不参与自动关联", () => {
+        const flags = buildFeatureFlags({});
+        const opts = buildHonkRuntimeOptions(
+            {},
+            flags,
+            { type: "file", url: "https://cdn.example.com/clash.yaml" },
+            null
+        );
+        assert.equal(opts.subscriptionUrl, HONK_ARG_DEFAULTS.subscriptionUrl);
     });
 });

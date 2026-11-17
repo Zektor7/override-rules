@@ -16,7 +16,12 @@ import { HONK_ARG_DEFAULTS } from "./honk-schema";
 import { HONK_POLICIES, isHonkPolicy } from "../catalog/honk-groups";
 import { parseBool, parseNumber } from "../utils/primitives";
 import type { FeatureFlags } from "../types/args";
-import type { HonkFileContext, HonkRuntimeOptions, HonkScriptArgs } from "../types/honk";
+import type {
+    HonkFileContext,
+    HonkRequestContext,
+    HonkRuntimeOptions,
+    HonkScriptArgs,
+} from "../types/honk";
 
 /** 取字符串：空/仅空白视为未提供，回退到 `fallback`。 */
 function readString(raw: string | undefined, fallback: string): string {
@@ -87,16 +92,93 @@ function buildDownloadUrl(base: string, sourceType: string, sourceName: string):
 }
 
 /**
+ * 从文件自身的远程地址里认出 SubStore 的下载链接。
+ *
+ * 「文件」类型下 `$file.url` 就是组合订阅的下载地址（用户填的远程 URL），
+ * 它本身就是 honk 该周期重拉的地址，去掉查询串（`?target=clash` 等只影响
+ * SubStore 的输出格式）后直接可用。非下载链接（外部 Clash 配置等）返回 `null`。
+ */
+function readDownloadUrlFromFile(fileContext: HonkFileContext | null): string | null {
+    const raw = fileContext?.url?.trim();
+    if (!raw) return null;
+    if (!/\/download\/(?:collection\/)?[^/?#]+/.test(raw)) return null;
+    return raw.split("#")[0].split("?")[0];
+}
+
+/** 读取请求头（大小写不敏感，多值时取第一个）。 */
+function readHeader(
+    headers: Record<string, string | string[] | undefined> | undefined,
+    name: string
+): string | undefined {
+    if (!headers) return undefined;
+    const target = name.toLowerCase();
+    for (const [key, value] of Object.entries(headers)) {
+        if (key.toLowerCase() !== target) continue;
+        if (Array.isArray(value)) return value[0];
+        return value;
+    }
+    return undefined;
+}
+
+/**
+ * 从 Sub-Store 的请求快照反推服务基础地址（协议 + host + 后端路径前缀）。
+ *
+ * 文件下载走 `/api/file/<name>`（或分享用的 `/share/file/<name>`），把这一段
+ * 去掉剩下的就是基础地址，例如 `http://sub.example.com/tdtVuezFG`。
+ * 这样用户不必再手填 `#sub-base=`；协议优先取 `x-forwarded-proto`（反代场景），
+ * 其余按 `http` 处理（局域网自建 Sub-Store 的常见形态）。
+ */
+function deriveBaseFromRequest(requestContext: HonkRequestContext | null): string {
+    const raw = requestContext?.url?.trim();
+    if (!raw) return "";
+
+    const headers = requestContext?.headers;
+    let protocol = "";
+    let host = "";
+    let path = "";
+
+    if (/^https?:\/\//i.test(raw)) {
+        try {
+            const parsed = new URL(raw);
+            protocol = parsed.protocol.replace(":", "");
+            host = parsed.host;
+            path = parsed.pathname;
+        } catch {
+            return "";
+        }
+    } else {
+        path = raw.split("?")[0];
+        host = readHeader(headers, "host") ?? "";
+        if (!host) return "";
+        const forwarded = readHeader(headers, "x-forwarded-proto");
+        const trimmed = forwarded?.split(",")[0]?.trim();
+        protocol = trimmed && trimmed.length > 0 ? trimmed : "http";
+    }
+
+    const matched = /^(.*)\/(?:api|share)\/file\/[^/]*$/.exec(path);
+    const basePath = matched ? matched[1] : "";
+    return `${protocol}://${host}${basePath}`;
+}
+
+/**
  * 解析订阅 URL 的最终取值，优先级：
  * 1. 显式 `#subscription=`（最高，兼容旧行为）；
- * 2. `#sub-base=` + SubStore 文件上下文 `$file`（自动拼接下载地址）；
- * 3. 占位 URL（提示用户手动替换）。
+ * 2. 文件自身的下载地址（「文件」类型下 `$file.url` 就是组合订阅下载链接）；
+ * 3. 基础地址（`#sub-base=` 或从请求 URL 反推）+ `$file` 的来源信息自动拼接；
+ * 4. 占位 URL（提示用户手动替换）。
  */
-function resolveSubscriptionUrl(args: HonkScriptArgs, fileContext: HonkFileContext | null): string {
+function resolveSubscriptionUrl(
+    args: HonkScriptArgs,
+    fileContext: HonkFileContext | null,
+    requestContext: HonkRequestContext | null
+): string {
     const explicit = readSubscriptionUrl(args.subscription);
     if (explicit !== HONK_ARG_DEFAULTS.subscriptionUrl) return explicit;
 
-    const base = readBaseUrl(args["sub-base"]);
+    const fromFile = readDownloadUrlFromFile(fileContext);
+    if (fromFile) return fromFile;
+
+    const base = readBaseUrl(args["sub-base"]) || deriveBaseFromRequest(requestContext);
     const sourceType = fileContext?.sourceType;
     const sourceName = fileContext?.sourceName;
     if (base && sourceType && sourceName) {
@@ -144,15 +226,17 @@ function readPolicy(raw: string | undefined, flags: FeatureFlags): string {
  * @param args - `$arguments` 原始对象（只取 honk 独有字段，共用字段由 `buildFeatureFlags` 处理）
  * @param flags - 已经过 `buildFeatureFlags` 的共用参数解析结果，用于 grouptype → policy 回退
  * @param fileContext - SubStore 文件处理作用域暴露的 `$file`；非 SubStore 环境传 `null`
+ * @param requestContext - SubStore 暴露的 `$options._req`；用于反推服务基础地址
  */
 export function buildHonkRuntimeOptions(
     args: HonkScriptArgs,
     flags: FeatureFlags,
-    fileContext: HonkFileContext | null = null
+    fileContext: HonkFileContext | null = null,
+    requestContext: HonkRequestContext | null = null
 ): HonkRuntimeOptions {
     const checkUrlRaw = args["check-url"]?.trim();
     return {
-        subscriptionUrl: resolveSubscriptionUrl(args, fileContext),
+        subscriptionUrl: resolveSubscriptionUrl(args, fileContext, requestContext),
         subscriptionTag: readString(args.subtag, HONK_ARG_DEFAULTS.subscriptionTag),
         subscriptionInterval: readString(
             args["sub-interval"],

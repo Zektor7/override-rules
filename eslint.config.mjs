@@ -121,6 +121,18 @@ export default [
         },
     },
 
+    // Sub-Store 脚本作用域模拟：必须用 new Function 注入自由变量，
+    // 这正是 Sub-Store 后端执行脚本的方式
+    {
+        files: ["tests/substore-scope.test.ts"],
+        rules: {
+            "@typescript-eslint/no-implied-eval": "off",
+            "@typescript-eslint/no-unsafe-function-type": "off",
+            "@typescript-eslint/no-unsafe-call": "off",
+            "sonarjs/code-eval": "off",
+        },
+    },
+
     // 关闭所有与 Prettier 格式冲突的 ESLint 规则（必须放最后）
     prettierConfig,
 ];
