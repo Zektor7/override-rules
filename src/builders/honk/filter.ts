@@ -2,43 +2,82 @@
  * honk `filter` 表达式的构造工具。
  *
  * honk 的 `filter` 沿用 dae 语法：`name(regex: '…')` 匹配节点名，`!name(...)` 取反，
- * `&&` / `||` 组合多个谓词。这里把 `countriesMeta`、`LOW_COST_NODE_MATCHER`、
- * `prefer` 参数等来源转成 honk 的 filter 字符串。
+ * `&&` / `||` 组合多个谓词。这里把 `countriesMeta`、`prefer` 参数等来源转成
+ * honk 的 filter 字符串。
  */
 
-import { countriesMeta } from "../../catalog/countries";
-import { LOW_COST_NODE_MATCHER } from "../../catalog/low-cost";
+import { HONK_COUNTRIES } from "../../catalog/honk-countries";
 
 /**
  * 排除订阅中的非代理节点（机场官网/流量提醒等）——沿用 qichiyuhub / kenzok8 通行写法。
  *
  * 这类条目通常在订阅里以「剩余流量」「到期时间」「官网」等出现，
- * 若不排除会让 Select/Auto/Final 组误把「官网链接」当作可用节点。
+ * 若不排除会让 Manual 组误把「官网链接」当作可用节点。
  */
 const UTILITY_NODE_EXCLUDE =
     "官网|剩余|流量|套餐|免费|订阅|到期时间|直连|Expire Date|Traffic|ExpireDate|Expire|Official|Announcement|Notice|登录|充值";
 
-/** 「匹配全部订阅节点，但排除机场元信息条目」的通用 filter；用于 Select/Auto/Fallback/Final。 */
+/** 判断节点名是否属于「机场元信息条目」（不是真正的代理节点）。 */
+export function isUtilityNode(name: string): boolean {
+    return new RegExp(UTILITY_NODE_EXCLUDE).test(name);
+}
+
+/**
+ * 所有已知地区名的合并正则源串（中文国名，取自 `catalog/honk-countries.ts`）。
+ *
+ * 上游节点通常已经过重命名脚本规范化（节点名形如「香港 01」「🇭🇰 香港 IPLC 02」），
+ * 地区关键词固定出现在名字里，因此地区匹配不必再用庞大的同义词正则——
+ * 按中文国名匹配即可。
+ */
+const REGION_NAMES_PATTERN = HONK_COUNTRIES.map(([country]) => country).join("|");
+
+/** 「匹配全部订阅节点，但排除机场元信息条目」的通用 filter；用于 Manual 组。 */
 export const ALL_NODES_FILTER = `!name(regex: '${UTILITY_NODE_EXCLUDE}')`;
+
+/**
+ * 把注入的 `direct` 出站收进候选。
+ *
+ * honk 的 `direct` / `block` 是出站而不是节点池成员：无过滤器的组、`keyword:`、
+ * `regex:` 与 `subtag(...)` 都不会选中它们，**只有按名字写出的过滤器才会收入**
+ * （`filter: name(direct)`）。mihomo 侧服务组候选里的 `DIRECT` 对应到这里。
+ */
+export const DIRECT_FILTER = "name(direct)";
+
+/**
+ * 生成引用其它组的 filter 表达式。
+ *
+ * honk 的 `filter: group('tag', …)` 会把嵌套组 tag 加入候选：每个嵌套组贡献它
+ * 自身策略当前选出的那个叶节点。这正是 mihomo 侧「候选列表里写其它代理组名」
+ * 的等价语义——服务组要「挑地区 / 挑手动选择」而不是「全都用同一批节点」，
+ * 就必须用 `group(...)`，否则所有组的成员会退化成同一张全量候选池。
+ *
+ * 注意：honk 只接受**单独一行**的 `group(...)`，与其它谓词写在同一行会被忽略。
+ * @param tags - 嵌套组 tag 列表（组名），按书写顺序排列
+ */
+export function groupFilter(tags: readonly string[]): string {
+    const quoted = tags.map((tag) => `'${tag}'`).join(", ");
+    return `group(${quoted})`;
+}
 
 /**
  * 生成地区组的 filter 表达式。
  *
- * 无 `excludePattern` 时直接返回 `name(regex: '<pattern>')`；
- * 有则拼接 `&& !name(regex: '<exclude>')`，与 Clash 侧的 include+exclude 语义一致。
- * `country` 上游已保证属于 `countriesMeta` 的键（来自 `analyzeNodes` 的 `groupedCountries`），
- * 若传入未知地区，`meta.pattern` 会在运行时报错，不再额外做存在性检查。
- * @param country - 中文地区名（`countriesMeta` 的键）
+ * 节点名经上游重命名脚本规范化后以中文国名开头（如「香港 01」「🇭🇰 香港 IPLC 02」），
+ * 因此按国名匹配即可——不必套用 `countriesMeta.pattern` 那套庞大的同义词正则。
+ * 同一组可能有多个国名别名（如「马来」与「马来西亚」），用 `|` 并列。
+ * @param country - 中文地区名（可并列多个）
  */
 export function countryFilter(country: string): string {
-    const meta = countriesMeta[country];
-    const include = `name(regex: '${meta.pattern}')`;
-    return meta.excludePattern ? `${include} && !name(regex: '${meta.excludePattern}')` : include;
+    return `name(regex: '${country}')`;
 }
 
-/** 低倍率组的 filter；直接复用 `LOW_COST_NODE_MATCHER.source` 保持与 Clash 侧一致。 */
-export function lowCostFilter(): string {
-    return `name(regex: '${LOW_COST_NODE_MATCHER.source}')`;
+/**
+ * 生成「未分类」组的 filter 表达式：不属于任何已知地区、也不是机场元信息的节点。
+ *
+ * 用「排除所有已知国名」来表达，比逐个列出节点名更短也更稳定（订阅换节点也不用重算）。
+ */
+export function unclassifiedFilter(): string {
+    return `!name(regex: '${REGION_NAMES_PATTERN}') && !name(regex: '${UTILITY_NODE_EXCLUDE}')`;
 }
 
 /**

@@ -28,7 +28,7 @@ function render(args: Args = {}, inline: Parameters<typeof renderHonkConfig>[1] 
 }
 
 describe("renderHonkConfig 段落顺序", () => {
-    it("按 banner → include → subscription → group → dns → routing → assets 顺序", () => {
+    it("按 banner → include → subscription → group → dns → routing 顺序", () => {
         const text = render();
         const idx = (needle: string) => text.indexOf(needle);
 
@@ -39,7 +39,6 @@ describe("renderHonkConfig 段落顺序", () => {
             ["group", idx("\ngroup {")],
             ["dns", idx("\ndns {")],
             ["routing", idx("\nrouting {")],
-            ["assets", idx("\nassets {")],
         ];
         for (const [name, position] of positions) {
             assert.ok(position >= 0, `${name} 缺失`);
@@ -143,9 +142,32 @@ describe("subscription 段", () => {
 });
 
 describe("dns 段", () => {
-    it("dns 段随 ipv6 参数变化", () => {
-        assert.match(render({ ipv6: "false" }), /qtype\(aaaa\) -> reject/);
-        assert.ok(!render({ ipv6: "true" }).includes("qtype(aaaa) -> reject"));
+    it("ipv6=false 时用 ipversion_prefer: 4 偏好 IPv4，但不拒绝 AAAA", () => {
+        const text = render({ ipv6: "false" });
+        assert.match(text, /ipversion_prefer: 4/);
+        assert.ok(!/qtype\(aaaa\) -> reject/.test(text), "不应禁用 IPv6 地址");
+    });
+
+    it("ipv6=true 时不写 ipversion_prefer（两个地址族都用）", () => {
+        const text = render({ ipv6: "true" });
+        assert.ok(!/ipversion_prefer/.test(text));
+        assert.ok(!/qtype\(aaaa\) -> reject/.test(text));
+    });
+
+    it("请求路由第一条是内网域名 nip.io -> default", () => {
+        const text = render();
+        const dnsIdx = text.indexOf("\ndns {");
+        const requestIdx = text.indexOf("request {", dnsIdx);
+        assert.ok(requestIdx > dnsIdx);
+        const firstRule = text.slice(requestIdx, text.indexOf("\n", requestIdx + 10));
+        assert.match(firstRule, /qname\(suffix: nip\.io\) -> default/);
+    });
+
+    it("不使用系统 DNS：请求路由里没有 asis", () => {
+        const text = render();
+        const dnsIdx = text.indexOf("\ndns {");
+        const dnsEnd = text.indexOf("\n}\n", dnsIdx);
+        assert.ok(!text.slice(dnsIdx, dnsEnd).includes("-> asis"), "不应回查系统解析器");
     });
 
     it("dns 默认使用阿里 + Cloudflare DoH，client_subnet=auto", () => {
@@ -177,7 +199,7 @@ describe("dns 段", () => {
 describe("group 段", () => {
     it("默认所有自动类组 policy=score 且带 icon", () => {
         const text = render();
-        for (const name of ["Auto", "HK", "TW", "US", "LowCost", "Final"]) {
+        for (const name of ["Auto", "HK", "TW", "US"]) {
             const idx = text.indexOf(`    ${name} {`);
             assert.ok(idx >= 0, `缺少 ${name} 组`);
             const block = text.slice(idx, text.indexOf("\n    }", idx));

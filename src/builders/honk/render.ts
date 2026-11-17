@@ -1,7 +1,7 @@
 /**
  * 拼接完整的 honk `config.dae` 文本。
  *
- * 只输出**策略骨架**：include → subscription → group → dns → routing → assets。
+ * 只输出**策略骨架**：include → subscription → group → dns → routing。
  * `global {}` 与 `experimental {}` 属于部署参数（网卡、数据目录、面板口令），
  * 交给同目录下的 `system.dae`，由顶部 `include { system.dae }` 引入——honk 会
  * 把 `system.dae` 里的段与本体合并（后出现的标量覆盖，集合类条目按顺序追加）。
@@ -11,10 +11,9 @@
  */
 
 import { HONK_POLICIES } from "../../catalog/honk-groups";
-import { buildHonkAssets } from "./assets";
 import { buildHonkDns } from "./dns";
-import { buildHonkGroups } from "./groups";
-import { buildHonkRoutingLines } from "./rules";
+import { buildHonkGroups, collectHonkTargets } from "./groups";
+import { buildHonkClashRules, buildHonkRoutingLines } from "./rules";
 import type { HonkBuildContext, InlineRuleSetMap } from "../../types/honk";
 
 /**
@@ -80,7 +79,7 @@ function renderBanner(ctx: HonkBuildContext): string[] {
         "# 由 override-rules 的 honk 覆写动态生成，请勿直接编辑。",
         "# 入口：src/main-honk.ts → convert-honk.min.js（Sub-Store 覆写）。",
         "# 目标客户端：honk (https://github.com/daeuniverse/honk)，dae 兼容语法。",
-        "# 本文件只负责策略骨架（subscription / group / dns / routing / assets），",
+        "# 本文件只负责策略骨架（subscription / group / dns / routing），",
         "# global 与 experimental 通过 include 从同目录下的 system.dae 加载。",
         `# 参数：${renderParameterFingerprint(ctx)}`,
         "# honk 侧无对应概念、已从 mihomo 语义裁剪的字段：landing / dialer-proxy 链式代理、",
@@ -97,15 +96,17 @@ function renderBanner(ctx: HonkBuildContext): string[] {
  */
 export function renderHonkConfig(ctx: HonkBuildContext, inlinedRuleSets: InlineRuleSetMap): string {
     const routingLines = buildHonkRoutingLines(ctx, inlinedRuleSets);
+    // 组裁剪与路由共用同一份规则：`include`/`exclude` 裁掉规则后，
+    // 不再被任何规则引用的服务组也不生成（与 mihomo 侧语义一致）。
+    const activeTargets = collectHonkTargets(buildHonkClashRules(ctx));
 
     const sections: string[][] = [
         renderBanner(ctx),
         [...INCLUDE_BLOCK],
         renderSubscriptionBlock(ctx),
-        buildHonkGroups(ctx),
+        buildHonkGroups(ctx, activeTargets),
         buildHonkDns(ctx.flags, ctx.opts),
         ["routing {", ...routingLines, "}"],
-        buildHonkAssets(),
     ];
 
     return `${sections.map((lines) => lines.join("\n")).join("\n\n")}\n`;

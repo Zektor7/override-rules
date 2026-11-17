@@ -16,14 +16,25 @@ Sub-Store 在「Clash Config」类型下会执行 `YAML.safeDump(await main(conf
 `operator` 的，可以直接把 config.dae 写回 `$content`，Sub-Store 会原样作为响应体吐出。
 所以本脚本在 Sub-Store 里不会注册全局 `main`（注册了就会被 YAML 化）。
 
-产物只包含策略段：subscription / group / dns / routing / assets；`global {}` 与
+产物只包含策略段：subscription / group / dns / routing；`global {}` 与
 `experimental {}` 属于机器/部署参数，交给同目录下的 `system.dae`，本文件顶部固定
 输出 `include { system.dae }` 引入。这样部署侧改网卡或面板口令不需要动本项目产物。
+
+组语义（honk 的组成员只由 filter 决定，层级与 mihomo 侧一一对应）：
+- HK / TW / JP / US … 地区组：name(regex: '<中文国名>')，有节点就建组；
+- Other 未分类：不属于任何已知地区的节点（名字里没有国名等），避免被忽略；
+- Auto 自动选择：候选是各地区组与未分类组；
+- Manual 手动选择：唯一持有全部节点的组；
+- Select 选择代理：优先选择 / 自动选择 / 地区 / 未分类 / 手动选择；
+- AI / Netflix / Youtube … 服务组：选择代理 / 地区 / 未分类 / 手动选择 / 直连；
+- Final 兜底：选择代理 / 地区 / 未分类 / 手动选择 / 直连，默认停在选择代理；
+- honk 侧不生成「故障转移」「低倍率节点」组；include / exclude 裁掉规则后不再被引用的
+  服务组不生成。
 
 与 mihomo 分支共享的参数（含义完全一致，此处只列名字，详义见 convert.min.js banner）：
 - grouptype: 地区代理组类型（0=select 手动, 1=min_moving_avg 自动测速, 2=loadbalance 负载均衡，默认 1）
 - threshold: 地区节点数量小于该值时不显示分组（默认 2；不足 2 个地区时自动展平）
-- ipv6: 启用 IPv6（false 时 dns.routing.request 加 `qtype(aaaa) -> reject`；默认 false）
+- ipv6: 启用 IPv6（false 时 dns 段写 `ipversion_prefer: 4` 偏好 IPv4，但**不禁用** v6 地址；默认 false）
 - quic: 允许 QUIC（false 时插入 `l4proto(udp) && dport(443) -> block`；默认 false）
 - adblock: 去广告（0=关闭，1/2/3=对应远程源；honk 侧统一近似为 `geosite: category-ads-all`，默认 3）
 - include: 只使用指定规则，逗号分隔（与 exclude 冲突时优先）
@@ -56,6 +67,11 @@ honk 无对应概念、显式忽略的 mihomo 参数：
 honk 侧交由 system.dae 处理的段（本覆写不再输出）：
 - global {}：网卡、dial_mode、data_dir、log_level、内核参数等部署项
 - experimental {}：native_api / clash_api / cache_file 面板与持久化配置
+
+dns 段的两个要点：
+- 不使用系统自身的 DNS——请求路由里没有 `-> asis`，所有查询都落在 default / remote 两个
+  命名上游上；第一条规则是 `qname(suffix: nip.io) -> default`（内网域名直连查询）；
+- 不禁用 IPv6——`#ipv6=false` 时用 `ipversion_prefer: 4` 表达「偏好 IPv4」，仍保留 v6 回退。
 
 源码位于 `src/`，入口为 `src/main-honk.ts`。
 */

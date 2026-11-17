@@ -9,7 +9,8 @@
  * 避免污染上游 Clash 分支的常量与同步节奏。
  */
 
-import { countriesMeta } from "./countries";
+import { COUNTRY_KEYS, countriesMeta } from "./countries";
+import { HONK_COUNTRY_CODES } from "./honk-countries";
 import { PROXY_GROUPS } from "./group-names";
 import type { GroupType } from "../types/args";
 
@@ -21,14 +22,19 @@ import type { GroupType } from "../types/args";
  */
 export const HONK_GROUP_NAMES: Record<keyof typeof PROXY_GROUPS, string | null> = {
     SELECT: "Select",
-    // honk 的 Select 组直接承担「手动选一个节点」的能力，不再需要「手动选择」变体。
-    MANUAL: null,
+    // 「手动选择」保留：它是唯一持有全部节点名的组，Auto / Fallback / Select /
+    // Final / 服务组都只引用它与地区组（与 mihomo 侧的层级一致）。
+    MANUAL: "Manual",
     AUTO: "Auto",
-    FALLBACK: "Fallback",
+    // honk 侧不生成「故障转移」组：Auto 已经按地区组给出自动选路，
+    // 再叠一层同候选的 fallback 组只是重复面板入口。
+    FALLBACK: null,
     // honk 没有 dialer-proxy 链式代理，落地/前置组无对应。
     LANDING: null,
     FRONT_PROXY: null,
-    LOW_COST: "LowCost",
+    // honk 侧不生成「低倍率节点」组：低倍率只是节点的一个属性，单独建组并
+    // 挂进每个服务组会让面板多出一堆重复入口，实际选路由地区组与手动选择承担。
+    LOW_COST: null,
     STATIC_RESOURCES: "StaticResources",
     AI_SERVICE: "AI",
     CRYPTO: "Crypto",
@@ -99,42 +105,13 @@ export function requireHonkName(key: keyof typeof PROXY_GROUPS): string {
 }
 
 /**
- * 中文地区名 → honk 组英文名，优先 ISO 3166 alpha-2；未收录时回退到去非 ASCII 后的字符串。
- *
- * 与 `countriesMeta` 独立维护，避免展示层的地区重命名牵动 honk 组名稳定性。
- */
-const HONK_COUNTRY_CODES: Readonly<Record<string, string>> = {
-    香港: "HK",
-    澳门: "MO",
-    台湾: "TW",
-    新加坡: "SG",
-    日本: "JP",
-    韩国: "KR",
-    美国: "US",
-    加拿大: "CA",
-    英国: "UK",
-    澳大利亚: "AU",
-    德国: "DE",
-    法国: "FR",
-    俄罗斯: "RU",
-    泰国: "TH",
-    印度: "IN",
-    马来西亚: "MY",
-    阿根廷: "AR",
-    芬兰: "FI",
-    埃及: "EG",
-    菲律宾: "PH",
-    土耳其: "TR",
-    乌克兰: "UA",
-};
-
-/**
  * 将中文地区名映射为 honk 允许的 ASCII 组名。
  *
+ * 映射表见 `catalog/honk-countries.ts`（取自上游重命名脚本的国家名清单）。
  * 未收录时回退到「去除非 ASCII 字符」的兜底逻辑；若结果为空则用 `Region` 占位，
  * 保证任何新增地区都不会阻塞构建。真正的完整性检查交给 `assertHonkCountryMappings()`
  * 在测试里跑，避免生产路径抛错。
- * @param country - 中文地区名（`countriesMeta` 的键）
+ * @param country - 中文地区名
  */
 export function honkCountryName(country: string): string {
     if (Object.hasOwn(HONK_COUNTRY_CODES, country)) {
@@ -156,6 +133,79 @@ export function assertHonkCountryMappings(): void {
     );
     if (missing.length > 0) {
         throw new Error(`honk 地区名映射缺失: ${missing.join(", ")}`);
+    }
+}
+
+/**
+ * honk 侧服务组的候选组（嵌套组 tag + 直连选项）。
+ *
+ * mihomo 侧服务组的候选是「其它代理组」（选择代理 / 地区组 / 低倍率 / 手动选择 /
+ * 直连），honk 没有候选列表概念，只能用 `filter: group('tag', …)` 表达嵌套引用、
+ * 用 `filter: name(direct)` 把直连收进候选。少数服务有特殊偏好（哔哩哔哩偏台港、
+ * 巴哈姆特偏台湾、TruthSocial 偏美国），这里按 mihomo 侧的候选语义翻译。
+ */
+export interface HonkServiceCandidates {
+    /** 嵌套组 tag 列表；书写顺序即 honk 侧的成员顺序。 */
+    tags: string[];
+    /** 是否把直连（`name(direct)`）也作为候选。 */
+    includeDirect: boolean;
+    /** 初始/回退成员 tag（对应 mihomo 侧候选列表的第一个）。 */
+    defaultTag: string;
+}
+
+/**
+ * 计算某个服务组在 honk 侧的候选嵌套组。
+ * @param serviceName - Clash 侧的服务组显示名（`PROXY_GROUPS` 的值）
+ * @param regionTags - 中文地区名 → honk 地区组 tag 的映射
+ * @param baseTags - 通用候选：选择代理 + 各地地区组 + 低倍率 + 手动选择
+ */
+export function honkServiceCandidates(
+    serviceName: string,
+    regionTags: ReadonlyMap<string, string>,
+    baseTags: readonly string[]
+): HonkServiceCandidates {
+    const selectTag = HONK_GROUP_NAMES.SELECT as string;
+    const manualTag = HONK_GROUP_NAMES.MANUAL as string;
+    const tagOf = (country: string): string | undefined => regionTags.get(country);
+    /** 去重且保持顺序：honk 的嵌套 tag 重复会被去重，这里提前收敛避免产物里出现重复项。 */
+    const unique = (tags: readonly string[]): string[] => [...new Set(tags)];
+
+    switch (serviceName) {
+        case PROXY_GROUPS.BILIBILI: {
+            const taiwan = tagOf(COUNTRY_KEYS.taiwan);
+            const hongKong = tagOf(COUNTRY_KEYS.hongKong);
+            return taiwan && hongKong
+                ? { tags: unique([taiwan, hongKong]), includeDirect: true, defaultTag: "direct" }
+                : { tags: unique(baseTags), includeDirect: true, defaultTag: "direct" };
+        }
+        case PROXY_GROUPS.BAHAMUT: {
+            const taiwan = tagOf(COUNTRY_KEYS.taiwan);
+            return taiwan
+                ? {
+                      tags: unique([taiwan, selectTag, manualTag]),
+                      includeDirect: true,
+                      defaultTag: taiwan,
+                  }
+                : { tags: unique(baseTags), includeDirect: true, defaultTag: selectTag };
+        }
+        case PROXY_GROUPS.TRUTH_SOCIAL: {
+            const unitedStates = tagOf(COUNTRY_KEYS.unitedStates);
+            return unitedStates
+                ? {
+                      tags: unique([unitedStates, selectTag, manualTag]),
+                      includeDirect: false,
+                      defaultTag: unitedStates,
+                  }
+                : { tags: unique(baseTags), includeDirect: true, defaultTag: selectTag };
+        }
+        case PROXY_GROUPS.FINANCE:
+        case PROXY_GROUPS.MICROSOFT:
+        case PROXY_GROUPS.WEIBO:
+        case PROXY_GROUPS.PT_SITE:
+            // 这些服务在 mihomo 侧是「直连优先」（候选列表以 DIRECT 开头）。
+            return { tags: unique(baseTags), includeDirect: true, defaultTag: "direct" };
+        default:
+            return { tags: unique(baseTags), includeDirect: true, defaultTag: selectTag };
     }
 }
 

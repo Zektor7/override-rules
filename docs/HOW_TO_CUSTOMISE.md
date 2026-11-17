@@ -160,7 +160,7 @@ export const PROJECT_URL = `${CDN_URL}/gh/Zektor7/override-rules@main`;
 
 ## 自定义 honk 输出
 
-honk 入口 `src/main-honk.ts` 与构建层 `src/builders/honk/` 产出 honk（dae 语法）的**策略骨架**（`subscription` / `group` / `dns` / `routing` / `assets` 五段），与 mihomo 分支共享 `src/catalog/countries.ts` / `src/catalog/service-groups.ts` / `src/catalog/rule-sets.ts` / `src/args/parse.ts`；honk 自己的映射层在 `src/catalog/honk-groups.ts`，策略参数的默认值在 `src/args/honk-schema.ts`。新增一个组或地区时，除了改上游的 catalog，还要同步补 honk 侧映射，否则产物会拿到 `Region` 占位组名。
+honk 入口 `src/main-honk.ts` 与构建层 `src/builders/honk/` 产出 honk（dae 语法）的**策略骨架**（`subscription` / `group` / `dns` / `routing` 四段），与 mihomo 分支共享 `src/catalog/service-groups.ts` / `src/catalog/rule-sets.ts` / `src/args/parse.ts`；honk 自己的映射层在 `src/catalog/honk-groups.ts`（组名映射）与 `src/catalog/honk-countries.ts`（189 个国家/地区的中文名 → ASCII 组名），策略参数的默认值在 `src/args/honk-schema.ts`。新增一个组或地区时，除了改上游的 catalog，还要同步补 honk 侧映射，否则产物会拿到 `Region` 占位组名。
 
 `global {}` 与 `experimental {}` 属于部署层（网卡、数据目录、面板监听与口令），本项目不会写它们；产物顶部固定 `include { system.dae }`，honk 自动从同目录下的 `system.dae` 读取。**部署层变更不需要改本项目代码**，写你自己的 `system.dae` 就行（参考 [`README.md`](../README.md#systemdae-参考)）。
 
@@ -192,6 +192,19 @@ honk 入口 `src/main-honk.ts` 与构建层 `src/builders/honk/` 产出 honk（d
 - `HONK_POLICY_VALUES` 白名单与 honk 官方 [groups.md#策略](https://github.com/daeuniverse/honk/blob/main/doc/zh/reference/groups.md#%E7%AD%96%E7%95%A5) 保持同步；
 - `tolerance` / `idle-timeout` / `check-url` / `interrupt` 只在自动选类组上输出，`Select` / `Fallback` 不写（honk 会忽略并打 warning）；
 - icon 从 `catalog/icons.ts` 与 `catalog/countries.ts::countriesMeta[country].icon` 取，honk 会校验“绝对 HTTP(S) URL + 不含空白 + ≤ 2048 字”，不符合会直接拒收。
+
+### 调整 honk 组的成员（filter）
+
+honk 的组成员只由 `filter` 决定，语义见 honk 官方
+[groups.md#过滤解析](https://github.com/daeuniverse/honk/blob/main/doc/zh/reference/groups.md#%E8%BF%87%E6%BB%A4%E8%A7%A3%E6%9E%90)：
+
+- `Manual`（手动选择）是唯一持有全部节点的组，用 `builders/honk/filter.ts::ALL_NODES_FILTER`（全订阅节点减去机场元信息条目）；
+- 地区组用 `builders/honk/filter.ts::countryFilter()`，按**中文国名**匹配（`name(regex: '香港')`）——上游节点名已由重命名脚本规范化为「国名 + 关键词 + 序号」，不需要庞大的同义词正则；
+- 不属于任何已知地区的节点由 `builders/honk/filter.ts::unclassifiedFilter()` 收进 `Other`（未分类）组（排除所有已知国名 + 排除机场元信息），避免被忽略；
+- `Auto` / `Select` / 服务组 / `Final` 用 `builders/honk/filter.ts::groupFilter()` 生成 `group('Select', <地区组…>, 'Manual')`——**嵌套引用的组必须真实存在**，否则 honk 启动会以 `invalid-nested-group-reference` 拒收配置；直连用 `name(direct)` 收进候选；
+- 服务组的候选规则集中在 `catalog/honk-groups.ts::honkServiceCandidates()`，与 mihomo 侧 `catalog/service-groups.ts` 的候选语义一一对应（含直连优先的几个服务）。
+
+多个 `filter:` 行之间是「或」关系，`HonkGroupSpec.filter` 传数组即可渲染成多行。新增服务组或改地区组时，记住 honk 侧「只要该地区有节点就建地区组」，不受 mihomo 侧 `threshold` 的约束；honk 侧也不生成「故障转移」「低倍率节点」组（`HONK_GROUP_NAMES` 里置 `null`）。
 
 ### 新增项目自维护的 ruleset 时
 

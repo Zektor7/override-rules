@@ -8,7 +8,7 @@
  * - 组名只允许 `[A-Za-z0-9]`（含空格在 dae 语法里合法，但下游面板与本项目历史
  *   约定都用 ASCII，保持一致）。
  *
- * 本项目只负责 honk 配置里的**策略骨架**（subscription / group / dns / routing / assets），
+ * 本项目只负责 honk 配置里的**策略骨架**（subscription / group / dns / routing），
  * `global {}` 与 `experimental {}` 属于机器/部署参数，交给用户的 `system.dae`，
  * 生成的 `config.dae` 顶部固定 `include { system.dae }`。
  *
@@ -162,19 +162,24 @@ export type InlineRuleSetMap = Readonly<Record<string, readonly string[]>>;
 export interface HonkGroupSpec {
     /** honk 组名，只允许 `[A-Za-z0-9]`。 */
     name: string;
-    /** `filter` 表达式，决定哪些订阅节点归入本组。 */
-    filter?: string;
+    /**
+     * `filter` 表达式，决定哪些订阅节点归入本组。
+     *
+     * 字符串数组表示多个 `filter:` 行——honk 里不同 filter 行之间是「或」关系，
+     * 同一行内用 `&&` 连接谓词。
+     */
+    filter?: string | readonly string[];
     /** honk policy 值；参见 `HONK_POLICY_VALUES`。 */
     policy: string;
     /** Selector 策略的初始或回退成员 tag。 */
     defaultValue?: string;
-    /** honk 组内回退出口：`direct` / `block` / 其他组名。 */
+    /** 组内回退出口：`direct` / `block` / 其他组名。 */
     final?: string;
     /** 切换节点时是否中断已有连接。 */
     interruptConnections?: boolean;
     /** 组图标绝对 URL；honk 会校验长度 ≤2048、不含空白。 */
     icon?: string;
-    /** URLTest/Score 切换阈值（毫秒）。 */
+    /** URLTest 组容忍阈值（毫秒）。 */
     tolerance?: number;
     /** URLTest 空闲秒数后暂停成员探测。 */
     idleTimeout?: number;

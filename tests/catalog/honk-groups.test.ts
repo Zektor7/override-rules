@@ -27,14 +27,19 @@ describe("HONK_GROUP_NAMES", () => {
         }
     });
 
-    it("落地/前置/Tailscale/GLOBAL/MANUAL/AdBlock/SogouInput 在 honk 无对应", () => {
+    it("落地/前置/Tailscale/GLOBAL/故障转移/低倍率/AdBlock/SogouInput 在 honk 无对应", () => {
         assert.equal(HONK_GROUP_NAMES.LANDING, null);
         assert.equal(HONK_GROUP_NAMES.FRONT_PROXY, null);
         assert.equal(HONK_GROUP_NAMES.TAILSCALE, null);
         assert.equal(HONK_GROUP_NAMES.GLOBAL, null);
-        assert.equal(HONK_GROUP_NAMES.MANUAL, null);
+        assert.equal(HONK_GROUP_NAMES.FALLBACK, null);
+        assert.equal(HONK_GROUP_NAMES.LOW_COST, null);
         assert.equal(HONK_GROUP_NAMES.AD_BLOCK, null);
         assert.equal(HONK_GROUP_NAMES.SOGOU_INPUT, null);
+    });
+
+    it("手动选择组保留：它是唯一持有全部节点的组", () => {
+        assert.equal(HONK_GROUP_NAMES.MANUAL, "Manual");
     });
 });
 

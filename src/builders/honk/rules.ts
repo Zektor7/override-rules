@@ -190,6 +190,22 @@ export function translateRule(rule: string, inlinedRuleSets: InlineRuleSetMap): 
 }
 
 /**
+ * 生成 honk 路由所依据的 Clash 规则列表（已按 include/exclude/adblock/quic/Tailscale 裁剪）。
+ *
+ * 单独暴露出来，是为了让组构建层能按同一份规则裁掉「不再被引用」的服务组，
+ * 与 mihomo 侧 `filterProxyGroupsByRules()` 的语义保持一致。
+ */
+export function buildHonkClashRules(ctx: HonkBuildContext): string[] {
+    return buildRules({
+        quicEnabled: ctx.flags.quicEnabled,
+        hasTailscale: ctx.nodes.hasTailscale,
+        includedRules: ctx.flags.includedRules,
+        excludedRules: ctx.flags.excludedRules,
+        adblockSource: ctx.flags.adblockSource,
+    });
+}
+
+/**
  * 生成 honk `routing {}` 段（不含首尾大括号）。
  *
  * 复用 Clash 侧的 `buildRules()` 结果，保证 include/exclude/adblock/quic 参数的
@@ -199,13 +215,7 @@ export function buildHonkRoutingLines(
     ctx: HonkBuildContext,
     inlinedRuleSets: InlineRuleSetMap
 ): string[] {
-    const rules = buildRules({
-        quicEnabled: ctx.flags.quicEnabled,
-        hasTailscale: ctx.nodes.hasTailscale,
-        includedRules: ctx.flags.includedRules,
-        excludedRules: ctx.flags.excludedRules,
-        adblockSource: ctx.flags.adblockSource,
-    });
+    const rules = buildHonkClashRules(ctx);
 
     const lines: string[] = [];
     for (const rule of rules) {

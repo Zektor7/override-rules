@@ -246,7 +246,7 @@ https://git.l3zc.com/powerfullz/override-rules/raw/branch/dist/yamls/config_gt-0
 
 #### 产物只包含策略骨架
 
-本项目输出的 `config.dae` 只写与分类/分流相关的五段：`subscription {}` / `group {}` / `dns {}` / `routing {}` / `assets {}`；文件顶部固定写：
+本项目输出的 `config.dae` 只写与分类/分流相关的四段：`subscription {}` / `group {}` / `dns {}` / `routing {}`；文件顶部固定写：
 
 ```
 include {
@@ -255,6 +255,35 @@ include {
 ```
 
 `global {}`（网卡、dial_mode、data_dir、log_level 等）与 `experimental {}`（native_api / clash_api / cache_file）属于机器/部署参数，**需要你在同目录下自己创建 `system.dae`**，honk 会把两部分自动合并。参考下面「system.dae 参考」。
+
+#### 产物里的组
+
+honk 的组没有「候选列表」，成员只能靠 `filter` 命中。产物里的层级与 mihomo 侧一一对应：
+
+```
+流量 → 路由规则 → 服务组 / 地区组 → 选择代理 → 自动选择 → 地区组 → 具体节点
+```
+
+| 组 | filter | policy | 默认成员 |
+| --- | --- | --- | --- |
+| `HK` / `TW` / `JP` / `US` … | `name(regex: '香港')` | 跟随 `#policy`（默认 score） | — |
+| `Other`（未分类） | `!name(regex: '<已知国名>')` | 跟随 `#policy` | — |
+| `Auto`（自动选择） | `group('HK', 'TW', …, 'Other')` | 跟随 `#policy` | — |
+| `Manual`（手动选择） | `!name(regex: '<机场元信息>')` | select | — |
+| `Select`（选择代理） | `group('Prefer'?, 'Auto', <地区…>, 'Other', 'Manual')` | select | `Prefer` / `Auto` |
+| `AI` / `Netflix` / `Youtube` … | `group('Select', <地区…>, 'Other', 'Manual')` + `name(direct)` | select | `Select`（直连优先的服务为 `direct`） |
+| `Final`（默认分流） | `group('Select', <地区…>, 'Other', 'Manual')` + `name(direct)` | select | `direct` |
+
+要点：
+
+- **全量节点只出现在 `Manual` 组**；其余组都靠 `group(...)` 嵌套引用别的组，成员互不相同。
+- 地区组按**中文国名**匹配即可——上游用重命名脚本规范化后节点名形如 `香港 01`、`🇭🇰 香港 IPLC 02`，不必再用庞大的同义词正则。
+- `Other`（未分类）组收留**不属于任何已知地区**的节点（名字里没有国名，或属于本项目未收录的地区），避免它们被忽略；`Auto` 也会把它纳入候选，自动选路不会漏掉它们。
+- `Auto` 的候选是地区组与未分类组，`Select` 再包住 `Auto` / 地区 / 手动选择——与 mihomo 侧的层级一致，面板上可以逐层手动指定。
+- 地区组**只要该地区有节点就建组**（honk 侧不受 `threshold` 限制）。
+- `include` / `exclude` 裁掉规则后，不再被任何规则引用的服务组也不会生成（与 mihomo 侧一致）。
+- honk 侧**不生成「故障转移」与「低倍率节点」组**：前者与 `Auto` 候选重复，后者只是节点属性，单独建组会在面板上多出一堆重复入口。mihomo 侧不受影响。
+- **面板里「直连 direct 显示不可用」是正常现象**：honk 的 `direct` 是启动时注入的保留出站（不是订阅节点），不参与 TCP 探测，因此没有健康/延迟数据；它作为路由出口和组成员都完全可用。
 
 #### 使用流程
 
@@ -296,7 +325,7 @@ URL hash 里的参数用 `&` 分隔，与 mihomo 侧完全兼容。分三类：*
 | --- | --- | --- |
 | `grouptype` | 派生自动类组的默认 policy：0→`select`；1→`score`；2→`loadbalance`（显式传 `#policy=` 会覆盖） | 默认 1 |
 | `threshold` | 地区节点数阈值；不足 2 个地区时展平 | 默认 2 |
-| `ipv6` | 控制 `dns.routing.request` 是否加 `qtype(aaaa) -> reject` | 默认 false |
+| `ipv6` | 控制 `dns` 段的 `ipversion_prefer`：false → `4`（偏好 IPv4，仍保留 IPv6 回退，**不禁用 v6 地址**）；true → 不写（两个地址族都用） | 默认 false |
 | `quic` | 控制 `routing` 是否插入 `l4proto(udp) && dport(443) -> block` | 默认 false |
 | `adblock` | 0 关闭；1/2/3 都近似为 `domain(geosite: category-ads-all) -> block`（honk 侧无远程规则源，三个源无法区分） | 默认 3 |
 | `include` / `exclude` | 与 mihomo 侧共用 `shouldKeepRule()` 语义，作用于 `routing {}` 段落 | Fork 特性 |
@@ -316,7 +345,7 @@ URL hash 里的参数用 `&` 分隔，与 mihomo 侧完全兼容。分三类：*
 
 策略（group）：
 
-- `policy`（**honk 侧新默认**）：`Auto` / 地区组 / 服务组 / `LowCost` / `Final` 统一使用的 policy，默认 `score`（honk 基于实际可靠性 + 新鲜目标质量 + 有界验证选成员，比 `min_moving_avg` 更贴近“自动”预期）。可选值（大小写不敏感，来自 [groups.md#策略](https://github.com/daeuniverse/honk/blob/main/doc/zh/reference/groups.md#%E7%AD%96%E7%95%A5)）：
+- `policy`（**honk 侧新默认**）：`Auto` / 地区组这两类「自动类组」统一使用的 policy，默认 `score`（honk 基于实际可靠性 + 新鲜目标质量 + 有界验证选成员，比 `min_moving_avg` 更贴近“自动”预期）。`Select` / `Manual` / `Final` / 服务组是组选择器，固定 `select`。可选值（大小写不敏感，来自 [groups.md#策略](https://github.com/daeuniverse/honk/blob/main/doc/zh/reference/groups.md#%E7%AD%96%E7%95%A5)）：
   - `select` / `selector` / `fixed` / `fixed(N)`：手动固定；
   - `urltest` / `min_moving_avg` / `min_avg10` / `min_last_delay`：延迟优先；
   - `loadbalance` / `roundrobin` / `round_robin` / `balance`：轮换；
