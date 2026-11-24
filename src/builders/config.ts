@@ -12,7 +12,7 @@ import { filterProxyGroupsByRules, filterRuleSetsByRules } from "./rule-filter";
 import { buildRules } from "./rules";
 import { snifferConfig } from "./sniffer";
 import { buildTunConfig } from "./tun";
-import type { FeatureFlags } from "../types/args";
+import type { AdblockSource, FeatureFlags } from "../types/args";
 import type { ClashConfig } from "../types/clash";
 import type { NodeAnalysis, ProxyGroup } from "../types/proxy";
 
@@ -25,7 +25,7 @@ function appendGlobalGroup(groups: ProxyGroup[]): ProxyGroup[] {
         icon: ICONS.global,
         "include-all": true,
         type: "select",
-        proxies: groups.map((group) => String(group.name)),
+        proxies: groups.map((group) => group.name),
     };
 
     return [...groups, global];
@@ -62,12 +62,13 @@ export function assembleConfig(
     const { ADBlock, AdditionalFilter, ...baseRuleSets } = ruleSets;
     type AdblockProvider =
         typeof ADBlock | (typeof adblockAlternatives)[keyof typeof adblockAlternatives];
-    let adblockProvider: AdblockProvider | undefined;
-    if (flags.adblockSource === 2) {
-        adblockProvider = ADBlock;
-    } else if (flags.adblockSource !== 0) {
-        adblockProvider = adblockAlternatives[flags.adblockSource];
-    }
+    const providersBySource: Record<AdblockSource, AdblockProvider | undefined> = {
+        0: undefined,
+        1: adblockAlternatives[1],
+        2: ADBlock,
+        3: adblockAlternatives[3],
+    };
+    const adblockProvider = providersBySource[flags.adblockSource];
 
     // 本 Fork 新增：启用 include/exclude 时，由剩余规则反推未被使用的代理组与规则集并一并剔除。
     const isRuleFiltering = flags.includedRules !== null || flags.excludedRules.size > 0;
@@ -87,7 +88,7 @@ export function assembleConfig(
         : providerRuleSets;
 
     return {
-        proxies: config.proxies,
+        proxies: nodes.allNodes,
         ...(config.hosts !== undefined && { hosts: config.hosts }),
         ...(flags.fullConfig && buildFullConfig(flags)),
         "proxy-groups": appendGlobalGroup(finalProxyGroups),
