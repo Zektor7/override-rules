@@ -125,13 +125,13 @@ export function filterProxyGroupsByRules(
     const countryGroupNames = new Set(context.countryNames.map(countryGroupName));
 
     const kept = groups.filter((group) => {
-        const name = String(group.name);
+        const name = group.name;
         return (
             INFRASTRUCTURE_GROUPS.has(name) || countryGroupNames.has(name) || activeNames.has(name)
         );
     });
 
-    const keptNames = new Set(kept.map((group) => String(group.name)));
+    const keptNames = new Set(kept.map((group) => group.name));
 
     for (const group of kept) {
         if (!group.proxies) continue;
